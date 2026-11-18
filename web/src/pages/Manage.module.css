@@ -23,6 +23,19 @@
   color: var(--label-2);
   text-align: right;
 }
+.helper {
+  margin-top: var(--s-4);
+}
+.code {
+  margin-top: var(--s-2);
+  padding: var(--s-3);
+  border-radius: var(--r-control);
+  background: var(--fill-1);
+  font: var(--t-mono);
+  white-space: pre;
+  overflow-x: auto;
+  user-select: all;
+}
 .actions {
   display: flex;
   flex-wrap: wrap;

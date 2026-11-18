@@ -303,3 +303,62 @@ func TestBoot_WiresRoutesDeps(t *testing.T) {
 		t.Fatalf("no Lampac: %+v %+v", b2.Online, b2.Progress)
 	}
 }
+
+// TestBoot_LampacByComposeName: without ANTRESOL_ONLINE_LAMPAC_URL the
+// declared helper's compose address is used, and the service is usable
+// only while the helper answers; the variable, when set, wins and the
+// helper is not asked.
+func TestBoot_LampacByComposeName(t *testing.T) {
+	up := false
+	asked := 0
+	w := &addonkit.HelperWatch{Helper: addonkit.Helper{Name: "lampac", Image: "img", Port: 9118, Health: "/"},
+		Probe: func(context.Context) error {
+			asked++
+			if up {
+				return nil
+			}
+			return errors.New("down")
+		}}
+	b, err := run(t, Config{DataDir: t.TempDir(), Helper: w})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if b.Online == nil || b.Online.L.Base.String() != "http://lampac:9118/" {
+		t.Fatalf("service on %+v", b.Online)
+	}
+	if asked != 1 || b.Usable() || b.Online.Enabled() {
+		t.Fatalf("asked %d, usable %v, on %v: want 1, false, false", asked, b.Usable(), b.Online.Enabled())
+	}
+	if st := b.HelperStatus(); st.Source != addonkit.HelperNone || !strings.Contains(st.Compose, "lampac:") {
+		t.Fatalf("status %+v", st)
+	}
+	up = true
+	w.Check(context.Background())
+	if !b.Usable() || !b.Online.Enabled() || b.HelperStatus().Source != addonkit.HelperCompose {
+		t.Fatalf("found: usable %v %+v", b.Usable(), b.HelperStatus())
+	}
+
+	asked = 0
+	b2, err := run(t, Config{DataDir: t.TempDir(), Helper: w, LampacURL: "http://192.168.50.10:9118/?uid=x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b2.Close()
+	if asked != 0 || b2.Online.L.Base.Host != "192.168.50.10:9118" || !b2.Usable() || b2.HelperStatus().Source != addonkit.HelperOverride {
+		t.Fatalf("override: asked %d %+v %+v", asked, b2.Online.L.Base, b2.HelperStatus())
+	}
+	if b2.HelperStatus().Address != "" {
+		t.Fatal("the admin's address is never shown")
+	}
+
+	// no variable, no helper: no service, as before
+	b3, err := run(t, Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b3.Close()
+	if b3.Online != nil || b3.Usable() || b3.HelperStatus().Source != addonkit.HelperNone {
+		t.Fatalf("none: %+v %+v", b3.Online, b3.HelperStatus())
+	}
+}

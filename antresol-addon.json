@@ -8,12 +8,20 @@
     "ru": "Смотреть онлайн: источники потокового видео для фильмов и сериалов, прогресс просмотра, внеплановые передачи ТВ-каналов",
     "en": "Watch online: streaming sources for movies and series, watch progress, extra programmes for TV channels"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Antresol",
   "homepage": "",
   "contract": 1,
   "platforms": {},
   "access": "adults",
+  "helpers": [
+    {
+      "name": "lampac",
+      "image": "ghcr.io/lampac-nextgen/lampac:1.84.3",
+      "port": 9118,
+      "health": "/"
+    }
+  ],
   "permissions": [
     "library.read",
     "metadata",

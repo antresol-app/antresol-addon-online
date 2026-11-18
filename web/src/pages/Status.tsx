@@ -5,6 +5,7 @@ import { ApiError, ui } from '@antresol/addon-sdk'
 import { useCallback, useEffect, useState } from 'react'
 import { onlineStatus } from '../api'
 import { useT } from '../i18n'
+import { statusLine } from './Settings'
 import { setTitle } from '../title'
 import type { OnlineStatus } from '../types'
 import m from './Manage.module.css'
@@ -43,7 +44,9 @@ export function Status() {
   }, [])
 
   // what the service says, in one word: not set up, not answering, or answering
-  const service = !status ? '' : !status.configured ? t('settings.online.notConfigured') : !status.reachable ? t('settings.online.unreachable') : t('status.reachable')
+  const service = !status ? '' : !status.configured ? statusLine(status, t) : !status.reachable ? t('settings.online.unreachable') : t('status.reachable')
+  const helper = status?.helper
+  const missing = helper?.source === 'none' && !!helper.compose
   return (
     <section aria-labelledby="online-status-title">
       <header className={m.header}>
@@ -71,12 +74,25 @@ export function Status() {
               <span className={m.value}>{status.sources}</span>
             </ListRow>
           )}
+          {helper?.source === 'compose' && helper.address && (
+            <ListRow label={t('status.address')}>
+              <span className={m.value}>{helper.address}</span>
+            </ListRow>
+          )}
           {status.version && (
             <ListRow label={t('status.version')}>
               <span className={m.value}>{status.version}</span>
             </ListRow>
           )}
         </GroupedSection>
+      )}
+      {status && missing && (
+        <div className={m.helper}>
+          <p className={m.subtitle}>{t('status.helperAdd')}</p>
+          <pre className={m.code} data-testid="helper-compose">
+            {helper?.compose}
+          </pre>
+        </div>
       )}
       <div className={m.actions}>
         <Button variant="secondary" size="small" icon="restart" disabled={asking} onClick={() => load()}>

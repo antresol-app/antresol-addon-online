@@ -50,6 +50,8 @@ const mount = (ui: ReactElement) =>
     </MemoryRouter>,
   )
 
+const MISSING = { configured: false, reachable: false, sources: 0, version: '', helper: { name: 'lampac', source: 'none', address: 'http://lampac:9118', compose: '  lampac:\n    image: img:1\n    restart: unless-stopped\n' } }
+
 beforeEach(() => resetAvailableForTests())
 afterEach(() => vi.unstubAllGlobals())
 
@@ -96,6 +98,13 @@ describe('«Онлайн» (settings)', () => {
     expect(calls.some((c) => c.method === 'PUT')).toBe(false)
   })
 
+  it('a helper service not found says which one', async () => {
+    serve({ enabled: false }, () => json(MISSING))
+    mount(<Settings />)
+    expect(await screen.findByText('Служба lampac не найдена')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Смотреть онлайн' })).toBeDisabled()
+  })
+
   it('says when the status does not answer, and the row of the status page opens it', async () => {
     serve({ enabled: true }, () => json({ error: 'нет' }, 502))
     mount(<Settings />)
@@ -132,6 +141,21 @@ describe('«Состояние источников»', () => {
     serve({ enabled: true }, () => json({ configured: true, reachable: false, sources: 0, version: '' }))
     at()
     expect(await screen.findByText('Lampac не отвечает')).toBeInTheDocument()
+  })
+
+  it('a helper service not found: what to add to compose.yml', async () => {
+    serve({ enabled: true }, () => json(MISSING))
+    at()
+    expect(await screen.findByText('Служба lampac не найдена')).toBeInTheDocument()
+    expect(screen.getByText(/Добавьте этот блок в compose\.yml/)).toBeInTheDocument()
+    expect(screen.getByTestId('helper-compose')).toHaveTextContent('image: img:1')
+  })
+
+  it('a helper service found: its compose address', async () => {
+    serve({ enabled: true }, () => json({ ...ok, helper: { name: 'lampac', source: 'compose', address: 'http://lampac:9118' } }))
+    at()
+    expect(await screen.findByText('http://lampac:9118')).toBeInTheDocument()
+    expect(screen.queryByTestId('helper-compose')).not.toBeInTheDocument()
   })
 
   it('a failed read is said, and «Проверить снова» asks again', async () => {

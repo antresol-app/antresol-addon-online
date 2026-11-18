@@ -7,12 +7,26 @@ import (
 	"github.com/antresol-app/antresol/addonkit"
 )
 
+// statusDTO is the status with where Lampac comes from: the admin's
+// address, the helper service on its compose name, or neither (then the
+// block to add to compose.yml).
+type statusDTO struct {
+	online.StatusDTO
+	Helper *addonkit.HelperStatus `json:"helper,omitempty"`
+}
+
 // status: GET /api/admin/status — whether Lampac is configured and
 // answers, whatever the setting, so «Настройки» can tell «off» from «not
-// configured».
+// configured». A helper service that does not answer yet is «not
+// configured»: the status then says what to add.
 func (a *API) status(w http.ResponseWriter, r *http.Request) {
-	if a.d.Online == nil {
-		addonkit.WriteJSON(w, http.StatusOK, online.StatusDTO{})
+	var out statusDTO
+	if a.d.Helper != nil {
+		h := a.d.Helper()
+		out.Helper = &h
+	}
+	if !a.usable() {
+		addonkit.WriteJSON(w, http.StatusOK, out)
 		return
 	}
 	st, err := a.d.Online.Status(r.Context())
@@ -20,7 +34,8 @@ func (a *API) status(w http.ResponseWriter, r *http.Request) {
 		onlineErr(w, r, err)
 		return
 	}
-	addonkit.WriteJSON(w, http.StatusOK, st)
+	out.StatusDTO = st
+	addonkit.WriteJSON(w, http.StatusOK, out)
 }
 
 // settingsDTO is the admin setting «Смотреть онлайн».

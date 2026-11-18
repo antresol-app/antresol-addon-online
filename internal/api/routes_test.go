@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/antresol-app/antresol-addon-online/internal/online"
+	"github.com/antresol-app/antresol/addonkit"
 )
 
 // The profile's rating limit comes from the core's header alone:
@@ -328,5 +329,46 @@ func TestOnlineStatusAdminOnly(t *testing.T) {
 	}
 	if w := e.do("GET", "/api/addons/online/x/admin/status", "", mama); w.Code != 403 {
 		t.Fatalf("user: %d", w.Code)
+	}
+}
+
+// TestOnlineWaitsForTheHelper: on the helper's compose address the routes
+// stay 404 and the status says «not configured» with the block to add
+// while the helper does not answer; once it answers, all is on.
+func TestOnlineWaitsForTheHelper(t *testing.T) {
+	found := false
+	h := addonkit.Helper{Name: "lampac", Image: "img:1", Port: 9118, Health: "/"}
+	e := newEnv(t, fakeOnline(t, false), func(d *Deps) {
+		d.Usable = func() bool { return found }
+		d.Helper = func() addonkit.HelperStatus {
+			if found {
+				return addonkit.HelperStatus{Name: "lampac", Source: addonkit.HelperCompose, Address: h.Address()}
+			}
+			return addonkit.HelperStatus{Name: "lampac", Source: addonkit.HelperNone, Address: h.Address(), Compose: h.Compose()}
+		}
+	})
+	if w := e.do("GET", "/api/addons/online/x/sources?kind=movie&tmdbId=438631", "", admin); w.Code != 404 {
+		t.Fatalf("sources without the helper: %d", w.Code)
+	}
+	if w := e.do("GET", "/api/addons/online/x/available", "", admin); !strings.Contains(w.Body.String(), `"available":false`) {
+		t.Fatalf("available: %s", w.Body)
+	}
+	var st struct {
+		Configured bool
+		Helper     addonkit.HelperStatus
+	}
+	w := e.do("GET", "/api/addons/online/x/admin/status", "", admin)
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil || st.Configured || st.Helper.Source != addonkit.HelperNone ||
+		!strings.Contains(st.Helper.Compose, "image: img:1") {
+		t.Fatalf("status: %d %s", w.Code, w.Body)
+	}
+	found = true
+	if w := e.do("GET", "/api/addons/online/x/available", "", admin); !strings.Contains(w.Body.String(), `"available":true`) {
+		t.Fatalf("available once found: %s", w.Body)
+	}
+	w = e.do("GET", "/api/addons/online/x/admin/status", "", admin)
+	st.Helper = addonkit.HelperStatus{}
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil || !st.Configured || st.Helper.Source != addonkit.HelperCompose || st.Helper.Compose != "" {
+		t.Fatalf("status once found: %d %s", w.Code, w.Body)
 	}
 }

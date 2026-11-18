@@ -17,6 +17,7 @@ import (
 
 	"github.com/antresol-app/antresol-addon-online/internal/online"
 	"github.com/antresol-app/antresol-addon-online/internal/store"
+	"github.com/antresol-app/antresol/addonkit"
 )
 
 // defaultUsersBudget bounds the boot's GET /users: a core that does not
@@ -29,10 +30,15 @@ type Config struct {
 	// ImportFrom is the server's vault.db (ANTRESOL_ONLINE_IMPORT_FROM):
 	// imported on the first start that has it ("": no import).
 	ImportFrom string
-	// LampacURL is ANTRESOL_ONLINE_LAMPAC_URL ("": no service, the addon
-	// runs with available: false).
+	// LampacURL is ANTRESOL_ONLINE_LAMPAC_URL: the admin's own address,
+	// which wins. "": the declared helper's compose address (Helper),
+	// else no service (available: false).
 	LampacURL string
-	FFmpeg    string // the core's ffmpeg (subtitles); "": ffmpeg
+	// Helper watches the helper service the manifest declares (nil:
+	// none). Run asks it once; the caller keeps it running
+	// (HelperWatch.Run) when LampacURL is "".
+	Helper *addonkit.HelperWatch
+	FFmpeg string // the core's ffmpeg (subtitles); "": ffmpeg
 	// Users lists the server's profiles (*addonkit.Client); nil: no
 	// clean-up.
 	Users online.UserLister
@@ -65,8 +71,38 @@ type Booted struct {
 	// mirrored into the library's (built with or without Lampac).
 	Progress *online.ProgressStore
 
+	// Overridden: the service is on the admin's ANTRESOL_ONLINE_LAMPAC_URL.
+	Overridden bool
+	// Helper is Config.Helper (nil: none declared).
+	Helper *addonkit.HelperWatch
+
 	enabled atomic.Bool
 	closed  atomic.Bool
+}
+
+// Usable reports whether Lampac can be asked: there is a service, and it
+// is on the admin's address or the helper answers on its compose name.
+func (b *Booted) Usable() bool {
+	return b != nil && b.Online != nil && b.up()
+}
+
+// up: Lampac is on the admin's address, or the helper answers.
+func (b *Booted) up() bool { return b.Overridden || b.Helper.Found() }
+
+// serving is what the service takes as its on: the admin setting, and
+// Lampac there to ask (so the scanner and the channels wait for a helper
+// that does not answer yet, as the routes do).
+func (b *Booted) serving() bool { return b.Enabled() && b.up() }
+
+// HelperStatus is the Lampac line of the settings page.
+func (b *Booted) HelperStatus() addonkit.HelperStatus {
+	if b.Helper == nil {
+		if b.Overridden {
+			return addonkit.HelperStatus{Source: addonkit.HelperOverride}
+		}
+		return addonkit.HelperStatus{Source: addonkit.HelperNone}
+	}
+	return b.Helper.Status(b.Overridden)
 }
 
 // Enabled is the admin setting «Смотреть онлайн» as last read or saved.
@@ -157,7 +193,17 @@ func bringUp(ctx context.Context, c Config) (*Booted, error) {
 	if err != nil {
 		return fail(fmt.Errorf("boot: keys: %w", err))
 	}
-	b.Online = newOnline(c, refKey, proxyKey, b.Enabled)
+	b.Helper = c.Helper
+	if c.LampacURL != "" {
+		b.Overridden = true
+	} else if c.Helper != nil {
+		// no address of the admin's: the helper on the compose network
+		c.LampacURL = c.Helper.Helper.Address() + "/"
+		if !c.Helper.Check(ctx) {
+			lg.Warn("online: no Lampac at its compose address yet; asked again every 30 s", "address", c.Helper.Helper.Address())
+		}
+	}
+	b.Online = newOnline(c, refKey, proxyKey, b.serving)
 	b.Progress = &online.ProgressStore{DB: d.DB, Lib: c.Library, Progress: c.LibraryProgress, Users: c.Users, Now: c.Now}
 	return b, nil
 }

@@ -30,7 +30,7 @@ registerAddon(ID, {
     { path: 'settings', admin: true, title: k('settings.title'), element: () => <Settings /> },
     { path: 'status', admin: true, title: k('status.title'), element: () => <Status /> },
   ],
-  manageTiles: [{ label: k('settings.title'), icon: 'cloud', to: 'settings', admin: true }],
+  manageTiles: [{ label: k('settings.title'), icon: 'globe', tint: 'teal', group: 'downloads', to: 'settings', admin: true }],
   // the way id is `online:way` (`<addonId>:<label>`): what a remembered way and
   // `?way=` name; `run` returns the picker the app draws until it closes
   itemActions: [{ label: k('way'), icon: 'play', watchWay: true, useAvailable, run: runWay }],

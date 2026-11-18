@@ -53,6 +53,11 @@ type Deps struct {
 	// SetEnabled saves it (nil: PUT admin/settings is 404).
 	Enabled    func() bool
 	SetEnabled func(ctx context.Context, on bool) error
+	// Usable says Lampac can be asked: on the admin's address, or the
+	// helper service answers on its compose name (nil: always).
+	Usable func() bool
+	// Helper is the Lampac helper's line of the status (nil: left out).
+	Helper func() addonkit.HelperStatus
 }
 
 // API is the mounted routes.
@@ -124,7 +129,12 @@ func userOf(r *http.Request) online.User {
 
 // on: Lampac is configured and the admin setting is on.
 func (a *API) on() bool {
-	return a.d.Online != nil && (a.d.Enabled == nil || a.d.Enabled())
+	return a.usable() && (a.d.Enabled == nil || a.d.Enabled())
+}
+
+// usable: there is a service and its Lampac can be asked.
+func (a *API) usable() bool {
+	return a.d.Online != nil && (a.d.Usable == nil || a.d.Usable())
 }
 
 // whenOn answers 404 while «Смотреть онлайн» is off or not configured.

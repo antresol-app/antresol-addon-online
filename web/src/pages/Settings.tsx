@@ -21,6 +21,7 @@ const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.m
 /** What x/admin/status says, as the one status line (empty: not known). */
 export function statusLine(st: OnlineStatus | null, t: TFunction): string {
   if (!st) return ''
+  if (!st.configured && st.helper?.source === 'none' && st.helper.name) return t('settings.online.helperMissing', { name: st.helper.name })
   if (!st.configured) return t('settings.online.notConfigured')
   if (!st.reachable) return t('settings.online.unreachable')
   return t('settings.online.sources', { n: st.sources })
@@ -96,7 +97,7 @@ export function Settings() {
         <ListRow label={t('common.watchOnline')} hint={t('settings.online.hint')} status={statusLine(status, t)}>
           <Toggle label={t('common.watchOnline')} checked={enabled} disabled={saving || (notConfigured && !enabled)} onChange={change} />
         </ListRow>
-        <ListLinkRow label={t('status.title')} icon="cloud" onOpen={() => navigate('/addons/online/status')} />
+        <ListLinkRow label={t('status.title')} icon="globe" onOpen={() => navigate('/addons/online/status')} />
       </GroupedSection>
     </section>
   )

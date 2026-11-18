@@ -6,11 +6,33 @@ series of a title page, the watch progress of what was played there, and the
 titles outside the library that TV channels may air. It is a separate addon
 with its own repository and releases, not part of the core.
 
+## Lampac (the helper service)
+
+The streams come from [Lampac](https://github.com/lampac-nextgen/lampac), a
+helper service the manifest declares (`helpers`). Add it to the same
+`compose.yml` as Antresol, under `services:`, with no `ports:`:
+
+```yaml
+  lampac:
+    image: ghcr.io/lampac-nextgen/lampac:1.84.3
+    restart: unless-stopped
+```
+
+and run `docker compose up -d`. The addon finds it by its service name
+(`http://lampac:9118`) within half a minute, with nothing to enter, and
+«Онлайн → Состояние источников» says where it is; while it is not found,
+that page shows the same block and the way stays hidden.
+
+`ANTRESOL_ONLINE_LAMPAC_URL` (`http://<host>:<port>/?uid=<id>`) wins over
+the one found: use it for a Lampac that runs elsewhere, or one whose
+`accsdb` needs a user id. It is never shown in the app or logged beyond its
+scheme and host.
+
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `antresol-addon.json` | the manifest (`access: "adults"`, the hooks below; the build fills in `platforms` and `web`) |
+| `antresol-addon.json` | the manifest (`access: "adults"`, the hooks below, the Lampac helper; the build fills in `platforms` and `web`; `main.go` embeds it) |
 | `main.go`, `addon.go` | the program on `addonkit`: `GET /health` (`addonkit.Ready`), the hooks at `/hooks/` |
 | `internal/corecopy/` | core helper packages copied by `tools/corecopy.sh` from `tools/corecopy.list`; generated, never edited |
 | `tools/corecopy.sh` | the copy (`make corecopy`) and its check (`--check`, run by `make test` and `TestCorecopyInSync` when there is a core checkout) |

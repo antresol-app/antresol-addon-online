@@ -105,3 +105,26 @@ func TestManifestHooksAreServed(t *testing.T) {
 		t.Fatalf("manifest %v, served %v", m.Hooks, hooks.Names)
 	}
 }
+
+// TestManifestDeclaresLampac: the manifest the program embeds declares
+// the Lampac helper service, and the watch is built on it.
+func TestManifestDeclaresLampac(t *testing.T) {
+	w, err := lampacHelper(manifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w == nil || w.Helper.Name != "lampac" || w.Helper.Port != 9118 || w.Helper.Address() != "http://lampac:9118" ||
+		!strings.Contains(w.Helper.Image, "lampac") {
+		t.Fatalf("helper %+v", w)
+	}
+	disk, err := os.ReadFile("antresol-addon.json")
+	if err != nil || string(disk) != string(manifestJSON) {
+		t.Fatal("the embedded manifest is not antresol-addon.json")
+	}
+	if w, err := lampacHelper([]byte(`{"id":"online"}`)); err != nil || w != nil {
+		t.Fatalf("no helper declared: %+v %v", w, err)
+	}
+	if _, err := lampacHelper([]byte(`{"helpers":[{"name":"Bad"}]}`)); err == nil {
+		t.Fatal("bad helpers: want an error")
+	}
+}

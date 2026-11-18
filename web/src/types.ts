@@ -123,6 +123,18 @@ export interface OnlineStatus {
   reachable: boolean
   sources: number
   version: string
+  /** Where Lampac comes from: the admin's address, the helper service on its compose name, or neither. */
+  helper?: OnlineHelper
+}
+
+/** The Lampac helper service's line of the status (addonkit.HelperStatus). */
+export interface OnlineHelper {
+  name?: string
+  source: 'override' | 'compose' | 'none'
+  /** the compose address (never the admin's own) */
+  address?: string
+  /** the block to add to compose.yml, while it is not found */
+  compose?: string
 }
 
 /** PUT x/progress. */

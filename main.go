@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"log"
 	"net"
@@ -27,6 +28,28 @@ import (
 	_ "github.com/antresol-app/antresol-addon-online/internal/strings"
 	"github.com/antresol-app/antresol/addonkit"
 )
+
+// manifestJSON is the addon's own manifest: its helper services.
+//
+//go:embed antresol-addon.json
+var manifestJSON []byte
+
+// lampacHelper is the watch over the Lampac helper service the manifest
+// declares (nil: none declared).
+func lampacHelper(manifest []byte) (*addonkit.HelperWatch, error) {
+	hs, err := addonkit.HelpersFromManifest(manifest)
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range hs {
+		if h.Name == "lampac" {
+			return &addonkit.HelperWatch{Helper: h, OnChange: func(found bool) {
+				log.Printf("online: Lampac at %s: found %v", h.Address(), found)
+			}}, nil
+		}
+	}
+	return nil, nil
+}
 
 func main() {
 	env, err := addonkit.FromEnv()
@@ -73,12 +96,21 @@ func main() {
 	// and leaves the addon not ready until the next start (which tries
 	// again).
 	go func() {
+		helper, err := lampacHelper(manifestJSON)
+		if err != nil {
+			log.Printf("online: manifest helpers: %v", err)
+		}
+		lampacURL := env.Var("LAMPAC_URL")
+		if lampacURL != "" {
+			helper = nil // the admin's address: the helper is not looked for
+		}
 		tm := coreadapt.TMDB(ctx, core)
 		titles := coreadapt.Titles{TMDB: tm, Lib: core}
 		b, err := boot.Run(ctx, boot.Config{
 			DataDir:         env.DataDir,
 			ImportFrom:      env.Var("IMPORT_FROM"),
-			LampacURL:       env.Var("LAMPAC_URL"),
+			LampacURL:       lampacURL,
+			Helper:          helper,
 			FFmpeg:          coreFFmpeg(ctx, core),
 			Users:           core,
 			Library:         core,
@@ -92,10 +124,13 @@ func main() {
 		}
 		mux := http.NewServeMux()
 		a := api.Register(mux, api.Deps{Online: b.Online, Progress: b.Progress, CacheImage: core.CacheImage,
-			Enabled: b.Enabled, SetEnabled: b.SetEnabled})
+			Enabled: b.Enabled, SetEnabled: b.SetEnabled, Usable: b.Usable, Helper: b.HelperStatus})
+		if helper != nil {
+			go helper.Run(ctx) // a helper started later is found without a restart
+		}
 		routes.set(mux)
 		hd := hooks.Deps{Progress: b.Progress, DB: b.DB.DB, Users: core,
-			Available: func() bool { return b.Online != nil && b.Enabled() }}
+			Available: func() bool { return b.Usable() && b.Enabled() }}
 		var chx *online.ChannelExtras
 		if b.Online != nil {
 			// the tracking scanner asks Lampac as an adult identity no

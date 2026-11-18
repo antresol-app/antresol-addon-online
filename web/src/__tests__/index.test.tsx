@@ -33,7 +33,7 @@ describe('registerAddon("online")', () => {
       ['settings', false, true],
       ['status', false, true],
     ])
-    expect(c?.manageTiles?.map((t) => [t.to, t.icon, t.admin])).toEqual([['settings', 'cloud', true]])
+    expect(c?.manageTiles?.map((t) => [t.to, t.icon, t.tint, t.group, t.admin])).toEqual([['settings', 'globe', 'teal', 'downloads', true]])
     // the way: a «Смотреть ▾» entry (id online:way) that asks `useAvailable` and runs the picker
     expect(c?.itemActions).toHaveLength(1)
     const way = c!.itemActions![0]!
