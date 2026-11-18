@@ -1,0 +1,39 @@
+# The core helper files internal/corecopy/ holds (tools/corecopy.sh): globs
+# relative to the core's internal/, test files never copied. The list starts
+# from what the code moved here imports; the commit that moves it completes
+# it from `go list` of that code.
+#
+# Whole files only, so what lives in a file of its own is copied and the
+# rest is not: auth.User sits in auth/store.go beside the store (bcrypt, the
+# core's users table, the app tokens), the channels types (Rules, ExtraTitle,
+# Stream, ExtrasOn) in channels/store.go and extras.go beside the Service
+# and the Builder, library/visibility.go is methods of the Repo, and the
+# progress and tracking stores need the core's database. The addon takes
+# the profile from addonkit (online.User is addonkit.User), the channel
+# types from addonkit's channels.* hook types (online.Stream is its own),
+# the library, the progress and the profiles from *addonkit.Client (the
+# interfaces of online/progress.go and channels.go), the tracked titles'
+# sources through coreadapt.Tracking, and its watched states and scanner
+# types are online's own. media.LiveInput (the loopback rule of ffmpeg's
+# input) is checked by hand in the channel test.
+
+# i18n: the machinery and the genre keys (the addon's own English catalog
+# is its own)
+i18n/i18n.go i18n/catalog.go i18n/genres.go
+# the library model and the rating rules (RatingAllowed), without the Repo
+# and the Service, which need the core's database
+library/model.go library/errors.go library/rating.go
+# the image cache's file names (online's posters)
+library/image_url.go
+# the TMDB client (genres: its cache) and discover, without the library
+# enrichers (enrich.go, photos.go and translations.go work on library.Repo),
+# and the metadata helpers the client builds on (raw URLs, the JSON fetch)
+metadata/httpjson.go metadata/raw.go metadata/ratelimit.go
+metadata/tmdb/client.go metadata/tmdb/genres.go metadata/tmdb/discover.go
+# only the sidecar and conversion helpers of the subtitles package (Decode,
+# NormLang, SniffLang): the client needs auto.go and the core's database
+subtitles/sidecar.go
+# the SQLite snapshot the one-time import reads
+sqlitesnap/*.go
+# the tracked titles' model without the core's Service and Store
+tracking/model.go

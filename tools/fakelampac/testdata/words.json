@@ -1,0 +1,9 @@
+{
+  "filmVoices": ["Дубляж", "Многоголосый", "Оригинал"],
+  "seriesVoices": ["Дубляж"],
+  "season": "%d сезон",
+  "subtitles": {
+    "ru": {"label": "Русские", "cue": "Онлайн-субтитры"},
+    "en": {"label": "English", "cue": "Online subtitles"}
+  }
+}

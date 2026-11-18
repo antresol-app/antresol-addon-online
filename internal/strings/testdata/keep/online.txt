@@ -1,0 +1,7 @@
+# Keep rules of «Смотреть онлайн»'s files that sat in the core's moved.txt
+# (a list the public core leaves out); they left with the code. Same
+# format: a file, or "file: literal", then " #" and the reason.
+
+internal/online/lampac.go: ANTRESOL_ONLINE_LAMPAC_URL: неверный адрес  # startup config error, admin log only
+internal/online/tracking_scan.go: субтитры  # a word in Lampac voice names (matched, never shown)
+internal/online/tracking_scan.go: оригинал  # a word in Lampac voice names (matched, never shown)

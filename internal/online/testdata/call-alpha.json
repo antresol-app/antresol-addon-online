@@ -1,0 +1,1 @@
+{"method":"play","url":"http://lampac.test:9118/proxy/tok1","headers":{"Referer":"https://player.example/"},"quality":{"auto":"http://lampac.test:9118/proxy/tok1"},"subtitles":[{"label":"English","url":"https://cdn.example/en.vtt"}],"title":"Альфа"}

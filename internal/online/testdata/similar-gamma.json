@@ -1,0 +1,5 @@
+{"type":"similar","data":[
+  {"method":"link","url":"http://lampac.test:9118/lite/gamma?href=one","similar":true,"year":2021,"details":"фильм","title":"Гамма","img":"https://cdn.example/1.jpg"},
+  {"method":"link","url":"http://lampac.test:9118/lite/gamma?href=two","similar":true,"year":"1984","details":"фильм","title":"Гамма","img":""},
+  {"method":"link","url":"http://lampac.test:9118/lite/gamma?href=three","similar":true,"year":2010,"details":"сериал","title":"Гамма: начало"}
+]}

@@ -1,0 +1,5 @@
+[
+  {"name":"alpha - 1080p","url":"http://lampac.test:9118/lite/alpha","index":10,"show":true,"balanser":"alpha","rch":false},
+  {"name":"beta","url":"http://lampac.test:9118/lite/beta","index":20,"show":false,"balanser":"beta","rch":false},
+  {"name":"gamma","url":"http://lampac.test:9118/lite/gamma","index":30,"show":true,"balanser":"gamma","rch":true}
+]

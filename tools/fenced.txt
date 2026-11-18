@@ -1,0 +1,3 @@
+# Files fenced with //go:build ignore (TestFence: exactly these), one path
+# relative to the module per line. None yet: the addon fences nothing until
+# a file waits for its wiring.

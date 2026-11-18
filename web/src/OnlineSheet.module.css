@@ -1,0 +1,209 @@
+/* «Смотреть онлайн»: the picker inside a large Sheet. Rows follow the
+   TrackPicker and menu rows; chips follow Настройки. Tokens only. */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding-bottom: var(--s-1);
+}
+
+.searching {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-8) 0;
+  color: var(--label-2);
+  font: var(--t-subhead);
+}
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid var(--fill-1);
+  border-top-color: var(--label);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* the server asks every source for up to 15 s: the bar fills over that time */
+.bar {
+  width: min(240px, 60%);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-3);
+  overflow: hidden;
+}
+.bar > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--label-2);
+  animation: fill 15s var(--ease-out) forwards;
+}
+@keyframes fill {
+  to {
+    width: 92%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+  .bar > span {
+    animation: none;
+    width: 50%;
+  }
+}
+
+.problem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin: 0;
+  color: var(--label);
+  font: var(--t-callout);
+}
+.problem p {
+  margin: 0;
+}
+.note {
+  margin: 0;
+  color: var(--label-3);
+  font: var(--t-footnote);
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.stepTitle {
+  margin: 0;
+  padding: 0 var(--s-1);
+  font: var(--t-headline);
+  color: var(--label);
+}
+
+/* a step with one choice */
+.summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-height: 44px;
+  padding: var(--s-2) var(--s-1);
+  border-bottom: 1px solid var(--separator);
+}
+.summaryLabel {
+  font: var(--t-headline);
+  color: var(--label);
+}
+.summaryValue {
+  min-width: 0;
+  font: var(--t-subhead);
+  color: var(--label-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  max-height: min(320px, 40dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--r-control);
+  background: var(--fill-4);
+}
+.row {
+  /* a scrolling flex column would squeeze the rows under their text */
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'text check' 'resume resume';
+  align-items: center;
+  column-gap: var(--s-3);
+  min-height: 44px;
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  border-bottom: 1px solid var(--separator);
+  background: transparent;
+  color: var(--label);
+  text-align: left;
+  cursor: pointer;
+}
+.row:last-child {
+  border-bottom: 0;
+}
+.row:hover:not(:disabled) {
+  background: var(--fill-3);
+}
+.row:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+/* the menu rows' type (Popover items) */
+.rowOn .rowLabel {
+  font-weight: 600;
+}
+.rowText {
+  grid-area: text;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rowLabel {
+  font: var(--t-callout);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowBadges {
+  margin-top: 2px;
+}
+.rowDetail {
+  font: var(--t-footnote);
+  color: var(--label-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.check {
+  grid-area: check;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  color: var(--accent);
+}
+.resume {
+  grid-area: resume;
+  height: 3px;
+  margin-top: var(--s-2);
+  border-radius: 2px;
+  background: var(--fill-2);
+  overflow: hidden;
+}
+.resume > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--label);
+}
+
+/* the online player while it looks the remembered source up again */
+.fallback {
+  display: grid;
+  place-items: center;
+}

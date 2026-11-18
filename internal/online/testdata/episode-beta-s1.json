@@ -1,0 +1,9 @@
+{"type":"episode",
+ "voice":[
+  {"method":"link","url":"http://lampac.test:9118/lite/beta?rjson=True&kinopoisk_id=123&s=1&t=1","active":true,"name":"Дубляж"},
+  {"method":"link","url":"http://lampac.test:9118/lite/beta?rjson=True&kinopoisk_id=123&s=1&t=2","name":"Многоголосый"}
+ ],
+ "data":[
+  {"method":"call","url":"http://lampac.test:9118/lite/beta/video?t=1&s=1&e=1&token=abc","stream":"http://lampac.test:9118/lite/beta/video.m3u8?t=1&s=1&e=1&play=true&uid=secret","s":1,"e":1,"name":"Серия 1"},
+  {"method":"call","url":"http://lampac.test:9118/lite/beta/video?t=1&s=1&e=2&token=abc","stream":"http://lampac.test:9118/lite/beta/video.m3u8?t=1&s=1&e=2&play=true&uid=secret","s":1,"e":2,"name":"Серия 2"}
+ ]}

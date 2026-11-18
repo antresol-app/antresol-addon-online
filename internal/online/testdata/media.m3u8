@@ -1,0 +1,12 @@
+#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-TARGETDURATION:4
+#EXT-X-PLAYLIST-TYPE:VOD
+#EXT-X-KEY:METHOD=AES-128,URI="../k.bin",IV=0x00000000000000000000000000000001
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:4.000,
+https://cdn2.example/seg/1.m4s?sig=x
+# a plain comment
+#EXTINF:4.000,
+https://cdn2.example/seg/2.m4s?sig=y
+#EXT-X-ENDLIST

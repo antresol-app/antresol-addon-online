@@ -1,0 +1,4 @@
+{"type":"movie","data":[
+  {"method":"play","url":"https://cdn.example/a/720.m3u8","quality":{"720p":"https://cdn.example/a/720.m3u8","1080p":"https://cdn.example/a/1080.m3u8 or https://cdn2.example/a/1080.m3u8"},"headers":{"Referer":"https://player.example/","Origin":"https://player.example"},"subtitles":[{"label":"Русские","url":"https://cdn.example/a/ru.srt"}],"translate":"Дубляж","maxquality":"1080p","title":"Альфа (Дубляж)"},
+  {"method":"play","url":"https://cdn.example/b/master.mpd","quality":{"1080p":"https://cdn.example/b/1080.mpd","720p":"https://cdn.example/b/720.mpd"},"translate":"Оригинал ~ 1080p","title":"Альфа (Оригинал)"}
+]}

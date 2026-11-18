@@ -1,0 +1,8 @@
+/* The player's black while it loads: a copy of the core's `playerFallback`
+   (an addon cannot compose from the core's files). Tokens only. */
+.playerFallback {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-top);
+  background: var(--black);
+}

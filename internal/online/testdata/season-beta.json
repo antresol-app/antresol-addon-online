@@ -1,0 +1,4 @@
+{"type":"season","data":[
+  {"method":"link","id":1,"url":"http://lampac.test:9118/lite/beta?rjson=False&kinopoisk_id=123&s=1","name":"1 сезон"},
+  {"method":"link","id":2,"url":"http://lampac.test:9118/lite/beta?rjson=False&kinopoisk_id=123&s=2","name":"2 сезон"}
+]}
