@@ -31,6 +31,8 @@ var (
 
 const (
 	defaultSourcesBudget = 15 * time.Second
+	// DefaultSourcesBudget is defaultSourcesBudget, for «Настройки».
+	DefaultSourcesBudget = defaultSourcesBudget
 	defaultLevelBudget   = 20 * time.Second
 	// probeTMDB is the title the admin status lists the sources of.
 	probeTMDB = 438631
@@ -77,6 +79,10 @@ type Service struct {
 	// Enabled is the admin setting «Смотреть онлайн» (nil: on).
 	Enabled func() bool
 	Log     *slog.Logger
+
+	// Prefs is the admin's choice of sources (nil: all, in Lampac's
+	// order), read on every list.
+	Prefs func() SourcePrefs
 
 	// SourcesBudget bounds a source list (ids and events; 15 s), and
 	// LevelBudget one level of a source (20 s). Zero: the defaults.
@@ -308,7 +314,7 @@ func (s *Service) Sources(ctx context.Context, u User, kind string, tmdbID int) 
 	}
 	k := titleKey{kind, tmdbID}
 	if v, ok := s.events.get(ctx, k); ok {
-		return v, nil
+		return s.prefs().arrange(v), nil
 	}
 	q := s.card(ctx, kind, tmdbID, t)
 	// the title page's background warm-up and the picker may ask at once;
@@ -333,12 +339,12 @@ func (s *Service) Sources(ctx context.Context, u User, kind string, tmdbID int) 
 	}
 	if err != nil {
 		s.log().Warn("online: events", "lampac", redactLampac(s.L.Base.String()), "tmdb", tmdbID, "err", err)
-		if errors.Is(err, ErrUnavailable) {
+		if errors.Is(err, ErrUnavailable) || errors.Is(err, ErrAuth) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
-	return out, nil
+	return s.prefs().arrange(out), nil
 }
 
 // sourcesOf are the sources of a title's events: the show:true and
@@ -403,7 +409,7 @@ func (s *Service) Source(ctx context.Context, u User, kind string, tmdbID int, i
 	if u.IsKid {
 		return Source{}, ErrKid
 	}
-	if !balanserRe.MatchString(id) {
+	if !balanserRe.MatchString(id) || s.sourceOff(id) {
 		return Source{}, ErrNothing
 	}
 	ctx = ForUser(ctx, u.ID)

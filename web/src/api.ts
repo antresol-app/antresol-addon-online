@@ -5,7 +5,7 @@
 import { addonApi, ApiError, locale } from '@antresol/addon-sdk'
 import type { PlayResponse } from '@antresol/addon-sdk'
 import { tr } from './i18n'
-import type { OnlineLevel, OnlinePlayRequest, OnlineProgress, OnlineProgressSave, OnlineSettings, OnlineSource, OnlineStatus } from './types'
+import type { LampacCheck, LampacSave, LampacSettings, LampacSourceRow, OnlineLevel, OnlinePlayRequest, OnlineProgress, OnlineProgressSave, OnlineSettings, OnlineSource, OnlineStatus } from './types'
 
 export const ID = 'online'
 const api = addonApi(ID)
@@ -68,3 +68,11 @@ export const onlineAvailable = (signal?: AbortSignal) => api.get<{ available: bo
 export const onlineStatus = (signal?: AbortSignal) => api.get<OnlineStatus>('admin/status', signal)
 export const onlineSettings = (signal?: AbortSignal) => api.get<OnlineSettings>('admin/settings', signal)
 export const saveOnlineSettings = (enabled: boolean) => api.put<OnlineSettings>('admin/settings', { enabled })
+/** «Настройки»: the Lampac address, account and waits. */
+export const lampacSettings = (signal?: AbortSignal) => api.get<LampacSettings>('admin/lampac', signal)
+export const saveLampacSettings = (body: LampacSave) => api.put<LampacSettings>('admin/lampac', body)
+/** «Проверить»: a real, signed-in request to Lampac with these values (nothing saved). */
+export const checkLampac = (body: LampacSave) => api.post<LampacCheck>('admin/lampac/check', body)
+/** Lampac's sources with the admin's choice, in the order they are offered. */
+export const lampacSources = (signal?: AbortSignal) => api.get<{ sources: LampacSourceRow[] }>('admin/lampac/sources', signal).then((r) => r.sources ?? [])
+export const saveLampacSources = (order: string[], off: string[]) => api.put<void>('admin/lampac/sources', { order, off })

@@ -19,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/antresol-app/antresol/addonkit"
 )
 
 // UserAgent is the one User-Agent of every Lampac call and of upstream
@@ -32,6 +34,9 @@ var (
 	// ErrSourceFailed: a refusal ({"accsdb":…}, {"rch":true}), HTML, a
 	// redirect, an oversized body or an HTTP error.
 	ErrSourceFailed = errors.New("Источник не ответил")
+	// ErrAuth: Lampac refused the account ({"accsdb": true}, 401, 403):
+	// the address needs the account of «Настройки».
+	ErrAuth = errors.New("Lampac не пускает: проверьте аккаунт в настройках «Онлайн»")
 	// ErrNothing: {} or an empty list.
 	ErrNothing = errors.New("Ничего не нашлось в этом источнике")
 	// errTimeout marks an ErrUnavailable that was a timeout: for one
@@ -46,6 +51,8 @@ const (
 	maxBody     = 4 << 20
 	callTimeout = 20 * time.Second
 	maxCalls    = 4
+	// DefaultCallTimeout is callTimeout, for «Настройки».
+	DefaultCallTimeout = callTimeout
 )
 
 // authKeys are the query keys that identify the Lampac user: never kept
@@ -59,6 +66,11 @@ type Lampac struct {
 	Base *url.URL
 	HTTP *http.Client // nil: http.DefaultTransport
 	UA   string       // "": UserAgent
+	// Timeout bounds one call (0: 20 s).
+	Timeout time.Duration
+	// Health (nil: none) keeps how the last call went, for «Состояние»
+	// (helpers.status): reached, refused the account, or not reached.
+	Health *addonkit.HelperHealth
 
 	once   sync.Once
 	sem    chan struct{} // at most 4 calls at a time
@@ -185,7 +197,11 @@ func (l *Lampac) Get(ctx context.Context, pathAndQuery string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrSourceFailed, err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	timeout := l.Timeout
+	if timeout <= 0 {
+		timeout = callTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if id, ok := userOf(ctx); ok {
 		release, err := l.users.acquire(ctx, id)
@@ -221,14 +237,24 @@ func (l *Lampac) Get(ctx context.Context, pathAndQuery string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: bad-redirect", ErrSourceFailed)
 	}
 	if err != nil {
+		if !errors.Is(ctx.Err(), context.Canceled) { // not a request the caller gave up
+			l.Health.Record(transportProblem(err))
+		}
 		return nil, transportErr(err)
 	}
 	defer resp.Body.Close()
 	if s := resp.Header.Get("Server"); s != "" {
 		l.server.Store(s)
 	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		l.Health.Record(&addonkit.HelperStatusError{Code: resp.StatusCode})
+		return nil, fmt.Errorf("%w: %w: HTTP %d", ErrSourceFailed, ErrAuth, resp.StatusCode)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		// Lampac answered: a source behind it failed
+		l.Health.Record(nil)
 		return nil, fmt.Errorf("%w: HTTP %d", ErrSourceFailed, resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
@@ -238,7 +264,30 @@ func (l *Lampac) Get(ctx context.Context, pathAndQuery string) ([]byte, error) {
 	if len(b) > maxBody {
 		return nil, fmt.Errorf("%w: answer over %d bytes", ErrSourceFailed, maxBody)
 	}
-	return classify(b)
+	out, err := classify(b)
+	if errors.Is(err, ErrAuth) {
+		l.Health.Record(&addonkit.HelperStatusError{Code: http.StatusUnauthorized})
+	} else {
+		l.Health.Record(nil)
+	}
+	return out, err
+}
+
+// transportProblem is a client error for HelperHealth, without its text
+// (it may carry the uid): what HelperProblem sorts by.
+func transportProblem(err error) error {
+	var ne net.Error
+	var op *net.OpError
+	var dns *net.DNSError
+	switch {
+	case errors.As(err, &dns):
+		return &net.DNSError{Err: "lookup failed", IsTimeout: dns.IsTimeout, IsNotFound: dns.IsNotFound}
+	case errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()):
+		return context.DeadlineExceeded
+	case errors.As(err, &op) && op.Op == "dial" && strings.Contains(op.Err.Error(), "refused"):
+		return errors.New("connection refused")
+	}
+	return errors.New("connection failed")
 }
 
 // errRedirect: a redirect off the Lampac origin or its allowed paths.
@@ -300,7 +349,7 @@ func classify(b []byte) ([]byte, error) {
 		return nil, ErrNothing
 	}
 	if truthy(m["accsdb"]) {
-		return nil, fmt.Errorf("%w: Lampac refused the user id (accsdb)", ErrSourceFailed)
+		return nil, fmt.Errorf("%w: %w (accsdb)", ErrSourceFailed, ErrAuth)
 	}
 	if truthy(m["rch"]) {
 		return nil, fmt.Errorf("%w: the source needs a Lampa client (rch)", ErrSourceFailed)

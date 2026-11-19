@@ -12,15 +12,22 @@ the library. Adults only.
 1. In Antresol: **Settings → Server → Extensions → Add Extension**, paste
    `https://github.com/antresol-app/antresol-addon-online`, **Check**,
    **Install**.
-2. Add Lampac, the helper service (below).
+2. Connect Lampac: three steps [below](#connecting-lampac).
 3. Check: **Settings → Server → Online → Source Status** says the service
    answers.
 
-## Lampac (the helper service)
+## Connecting Lampac
 
 The streams come from [Lampac](https://github.com/lampac-nextgen/lampac), a
-program that runs next to the server. Add it to the same `compose.yml` as
-Antresol, under `services:`, next to `antresol`, with no `ports:`:
+separate program next to the server. Connecting it takes three steps; all but
+the first are done in the app: **Settings → Server → Online**, the **Lampac
+Connection** block.
+
+### Step 1. Run Lampac
+
+Skip this if Lampac already runs on your network. Otherwise add it to the same
+`compose.yml` as Antresol, under `services:`, with no `ports:`, and run
+`docker compose up -d`:
 
 ```yaml
 services:
@@ -32,23 +39,49 @@ services:
     restart: unless-stopped
 ```
 
-Then run `docker compose up -d`. Within half a minute the addon finds it at
-`http://lampac:9118` by its service name: nothing to enter, no restart.
-**Settings → Server → Online** shows the state; while Lampac is not found, the
-**Source Status** page shows this same block and the Online way stays hidden.
+The addon finds it at `http://lampac:9118` by its service name within half a
+minute.
 
-### Lampac elsewhere
+### Step 2. Address and sign-in
 
-If Lampac already runs elsewhere on your network, or its `accsdb` needs a
-user id, set the server's variable (in Antresol's `.env`, then
-`docker compose up -d`):
+In **Lampac Connection**:
+
+- **Lampac Address** is filled in already when the service is found through
+  `compose.yml`. When Lampac runs elsewhere, type its address, e.g.
+  `http://192.0.2.10:9118`.
+- **Sign-In** is needed when Lampac has accounts on (`accsdb` in its
+  `init.conf`; without it Lampac answers "access denied"). Pick how Lampac
+  knows you and type the value:
+  - **ID (uid)**: an id of Lampac's `accsdb.accounts` / `users.json` (what
+    Lampa asks for when signing in);
+  - **Account email** (`account_email`), **Token** (`token`) or **Set-top box
+    MAC address** (`box_mac`) when the account is set up under one of them;
+  - **Shared password** (`accsdb.shared_passwd`): the addon registers an id of
+    its own with it, as Lampa does, and a new one when its time
+    (`shared_daytime`) runs out.
+
+  The value is kept in the addon's database, added to every request to Lampac
+  and never shown; logs get the scheme and host only.
+
+### Step 3. Check and save
+
+**Check** makes a real request to Lampac with that address and sign-in and
+says one of three things: **signed in** (with the number of sources),
+**sign-in not accepted** (wrong value) or **Lampac isn't responding** (wrong
+address, or the service is not running). Then **Save**: it applies at once,
+no restart. Lampac's sources are listed below it, to turn off or reorder.
+
+### With the server's variable
+
+The address can also be set in Antresol's `.env` (also when Antresol does not
+run in Docker), then `docker compose up -d`:
 
 ```sh
 ANTRESOL_ONLINE_LAMPAC_URL=http://<host>:9118/?uid=<id>
 ```
 
-It wins over the one found. It is never shown in the app or logged beyond its
-scheme and host. Use it too when Antresol does not run in Docker.
+The variable wins over the address set in the app; the sign-in set there is
+added to it too.
 
 ## Where it shows up
 
@@ -74,7 +107,10 @@ scheme and host. Use it too when Antresol does not run in Docker.
 
 `library.afterScan`, `home.continue`, `tracking.scan:online`,
 `tracking.watched` and the four `channels.*` hooks (`ready`, `candidates`,
-`resolve`, `release`). Permissions: `library.read`, `metadata`, `images`,
+`resolve`, `release`), and `helpers.status` (Lampac as the addon uses it,
+for the server's «Состояние» page: where its address comes from, and the
+outcome of its own last call, or a 10 s probe when that is stale).
+Permissions: `library.read`, `metadata`, `images`,
 `users.read`, `tracking`, `progress`.
 
 ## The core copies

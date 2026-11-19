@@ -130,7 +130,7 @@ export interface OnlineStatus {
 /** The Lampac helper service's line of the status (addonkit.HelperStatus). */
 export interface OnlineHelper {
   name?: string
-  source: 'override' | 'compose' | 'none'
+  source: 'override' | 'settings' | 'compose' | 'none'
   /** the compose address (never the admin's own) */
   address?: string
   /** the block to add to compose.yml, while it is not found */
@@ -160,4 +160,54 @@ export interface OnlineProgressSave {
 /** GET and PUT x/admin/settings (admin): «Смотреть онлайн» on or off. */
 export interface OnlineSettings {
   enabled: boolean
+}
+
+/** GET x/admin/lampac (admin): «Настройки»'s Lampac block. Never the account's value nor the address' query. */
+export interface LampacSettings {
+  /** The saved address ('' : none saved). */
+  url: string
+  /** The helper service's compose address (the field's value while none is saved). */
+  composeUrl?: string
+  /** Where the address in force comes from. */
+  source: 'override' | 'settings' | 'compose' | 'none'
+  /** The server's ANTRESOL_ONLINE_LAMPAC_URL is set: it wins over the address saved here (the sign-in saved here still applies). */
+  server: boolean
+  /** The account's query key ('' : no account). */
+  authKey: string
+  /** An account value is saved. */
+  authSet: boolean
+  authKeys: string[]
+  /** Seconds; 0: the default. */
+  timeout: number
+  sourcesWait: number
+  defaultTimeout: number
+  defaultSourcesWait: number
+  minWait: number
+  maxWait: number
+}
+
+/** PUT x/admin/lampac: `authValue` left out keeps the saved one; '' clears it. */
+export interface LampacSave {
+  url: string
+  authKey: string
+  authValue?: string
+  timeout: number
+  sourcesWait: number
+}
+
+/** One of Lampac's sources with the admin's choice (GET x/admin/lampac/sources). */
+export interface LampacSourceRow {
+  id: string
+  name: string
+  enabled: boolean
+  /** Lampac found its probe title there. */
+  found: boolean
+  /** Lampac lists it now. */
+  listed: boolean
+}
+
+/** POST x/admin/lampac/check: a real request to Lampac with the typed values. */
+export interface LampacCheck {
+  result: 'ok' | 'auth' | 'down' | 'error'
+  sources: number
 }

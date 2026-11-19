@@ -29,7 +29,7 @@ import (
 
 // Names are the hooks Register answers (the manifest declares them).
 var Names = []string{"library.afterScan", "home.continue", "tracking.scan:online", "tracking.watched",
-	"channels.ready", "channels.candidates", "channels.resolve", "channels.release"}
+	"channels.ready", "channels.candidates", "channels.resolve", "channels.release", "helpers.status"}
 
 // Channels are the «ТВ» titles outside the library (*online.ChannelExtras).
 type Channels interface {
@@ -59,7 +59,10 @@ type Deps struct {
 	// Channels (nil: no Lampac or TMDB) are the «ТВ» titles outside the
 	// library.
 	Channels Channels
-	Log      *slog.Logger
+	// Helpers answers helpers.status: Lampac as the addon uses it
+	// (*boot.Booted.HelpersStatus; nil: 204).
+	Helpers func(ctx context.Context) addonkit.HelpersStatus
+	Log     *slog.Logger
 }
 
 // Register answers the hooks (Names) on m.
@@ -73,6 +76,15 @@ func Register(m *addonkit.HookMux, d Deps) {
 	m.Handle("channels.candidates", h.channelsCandidates)
 	m.Handle("channels.resolve", h.channelsResolve)
 	m.Handle("channels.release", h.channelsRelease)
+	m.Handle("helpers.status", h.helpersStatus)
+}
+
+// helpersStatus answers helpers.status (contract: «helpers.status»).
+func (h *hooks) helpersStatus(ctx context.Context, _ *addonkit.User, _ json.RawMessage) (any, error) {
+	if h.d.Helpers == nil {
+		return nil, nil
+	}
+	return h.d.Helpers(ctx), nil
 }
 
 type hooks struct {

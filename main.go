@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -100,16 +101,13 @@ func main() {
 		if err != nil {
 			log.Printf("online: manifest helpers: %v", err)
 		}
-		lampacURL := env.Var("LAMPAC_URL")
-		if lampacURL != "" {
-			helper = nil // the admin's address: the helper is not looked for
-		}
 		tm := coreadapt.TMDB(ctx, core)
 		titles := coreadapt.Titles{TMDB: tm, Lib: core}
 		b, err := boot.Run(ctx, boot.Config{
-			DataDir:         env.DataDir,
-			ImportFrom:      env.Var("IMPORT_FROM"),
-			LampacURL:       lampacURL,
+			DataDir:    env.DataDir,
+			ImportFrom: env.Var("IMPORT_FROM"),
+			// the admin's address; one saved in «Настройки» wins over it
+			LampacURL:       env.Var("LAMPAC_URL"),
 			Helper:          helper,
 			FFmpeg:          coreFFmpeg(ctx, core),
 			Users:           core,
@@ -122,36 +120,57 @@ func main() {
 			chRoutes.fail()
 			return
 		}
-		mux := http.NewServeMux()
-		a := api.Register(mux, api.Deps{Online: b.Online, Progress: b.Progress, CacheImage: core.CacheImage,
-			Enabled: b.Enabled, SetEnabled: b.SetEnabled, Usable: b.Usable, Helper: b.HelperStatus})
 		if helper != nil {
-			go helper.Run(ctx) // a helper started later is found without a restart
+			// a helper started later is found without a restart (asked
+			// even while an address of the admin's is in force: clearing
+			// it falls back to the helper)
+			go helper.Run(ctx)
 		}
-		routes.set(mux)
-		hd := hooks.Deps{Progress: b.Progress, DB: b.DB.DB, Users: core,
-			Available: func() bool { return b.Usable() && b.Enabled() }}
-		var chx *online.ChannelExtras
-		if b.Online != nil {
-			// the tracking scanner asks Lampac as an adult identity no
-			// profile has
-			hd.Scanner = online.NewTrackingScanner(b.Online, coreadapt.Tracking{C: core}, online.User{ID: -1, Name: "tracking"}, 0)
-			if tm != nil { // no TMDB: no titles outside the library
-				chx = &online.ChannelExtras{Online: b.Online, TMDB: tm, Library: core}
-				hd.Channels = chx
-				chRoutes.set(chx)
+		// mount puts the routes and hooks on svc (the service in force);
+		// a change of the Lampac settings mounts them again on the new one
+		var (
+			mmu sync.Mutex
+			a   *api.API
+			chx *online.ChannelExtras
+		)
+		mount := func(svc *online.Service) {
+			mmu.Lock()
+			defer mmu.Unlock()
+			mux := http.NewServeMux()
+			a = api.Register(mux, api.Deps{Online: svc, Progress: b.Progress, CacheImage: core.CacheImage,
+				Enabled: b.Enabled, SetEnabled: b.SetEnabled, Usable: b.Usable, Helper: b.HelperStatus, Lampac: b})
+			routes.set(mux)
+			hd := hooks.Deps{Progress: b.Progress, DB: b.DB.DB, Users: core,
+				Available: func() bool { return b.Usable() && b.Enabled() }, Helpers: b.HelpersStatus}
+			old := chx
+			chx = nil
+			if svc != nil {
+				// the tracking scanner asks Lampac as an adult identity no
+				// profile has
+				hd.Scanner = online.NewTrackingScanner(svc, coreadapt.Tracking{C: core}, online.User{ID: -1, Name: "tracking"}, 0)
+				if tm != nil { // no TMDB: no titles outside the library
+					chx = &online.ChannelExtras{Online: svc, TMDB: tm, Library: core}
+					hd.Channels = chx
+					chRoutes.set(chx)
+				}
+			}
+			if chx == nil {
+				chRoutes.set(http.NotFoundHandler())
+			}
+			hooks.Register(hooksMux, hd)
+			if old != nil {
+				old.Close()
 			}
 		}
-		if chx == nil {
-			chRoutes.set(http.NotFoundHandler())
-		}
-		hooks.Register(hooksMux, hd)
+		b.SetOnChange(mount)
 		ready.Set()
 		<-ctx.Done()
+		mmu.Lock()
 		if chx != nil {
 			chx.Close()
 		}
 		a.Wait()
+		mmu.Unlock()
 		b.Close()
 	}()
 	log.Printf("%s: serving on %s", env.ID, env.Socket)

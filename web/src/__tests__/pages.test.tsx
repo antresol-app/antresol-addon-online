@@ -143,7 +143,7 @@ describe('«Состояние источников»', () => {
     expect(await screen.findByText('Lampac не отвечает')).toBeInTheDocument()
     // what Lampac is, and where the documentation says how to connect it
     expect(screen.getByText(/Онлайн-источники даёт Lampac/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Как установить и подключить Lampac' })).toHaveAttribute('href', 'https://github.com/antresol-app/antresol-addon-online/blob/main/README.ru.md#lampac--вспомогательная-служба')
+    expect(screen.getByRole('link', { name: 'Как установить и подключить Lampac' })).toHaveAttribute('href', 'https://github.com/antresol-app/antresol-addon-online/blob/main/README.ru.md#подключение-lampac')
   })
 
   it('a helper service not found: what to add to compose.yml', async () => {
@@ -169,5 +169,109 @@ describe('«Состояние источников»', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Проверить снова' }))
     expect(await screen.findByText('Отвечает')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+describe('«Онлайн» → Lampac', () => {
+  const LAMPAC = { url: '', composeUrl: 'http://lampac:9118', source: 'compose', server: false, authKey: '', authSet: false, authKeys: ['uid', 'account_email', 'token', 'box_mac'],
+    timeout: 0, sourcesWait: 0, defaultTimeout: 20, defaultSourcesWait: 15, minWait: 5, maxWait: 120 }
+  function serveLampac() {
+    const calls: Calls = []
+    let saved = { ...LAMPAC }
+    let rows = [
+      { id: 'alpha', name: 'Alpha', enabled: true, found: true, listed: true },
+      { id: 'beta', name: 'Beta', enabled: true, found: false, listed: true },
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+        const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+        calls.push({ url, method, body })
+        if (url === `${X}admin/status`) return json(ok)
+        if (url === `${X}admin/settings`) return json({ enabled: true })
+        if (url === `${X}admin/lampac` && method === 'GET') return json(saved)
+        if (url === `${X}admin/lampac` && method === 'PUT') {
+          const b = body as { url: string; authKey: string; authValue?: string; timeout: number }
+          saved = { ...saved, url: b.url, authKey: b.authKey, authSet: !!b.authValue, timeout: b.timeout, source: b.url ? 'settings' : 'compose' }
+          return json(saved)
+        }
+        if (url === `${X}admin/lampac/check`) {
+          const b = body as { authValue?: string }
+          return json(b.authValue === 's3cret' ? { result: 'ok', sources: 12 } : { result: 'auth', sources: 0 })
+        }
+        if (url === `${X}admin/lampac/sources` && method === 'GET') return json({ sources: rows })
+        if (url === `${X}admin/lampac/sources` && method === 'PUT') {
+          const b = body as { order: string[]; off: string[] }
+          rows = b.order.map((id) => ({ ...rows.find((r) => r.id === id)!, enabled: !b.off.includes(id) }))
+          return new Response(null, { status: 204 })
+        }
+        if (url === `${X}available`) return json({ available: true })
+        return json({})
+      }),
+    )
+    return calls
+  }
+
+  it('checks the typed sign-in for real, then saves; the sign-in is never read back', async () => {
+    const calls = serveLampac()
+    mount(<Settings />)
+    expect(await screen.findByText('Используется служба lampac из compose.yml')).toBeInTheDocument()
+    // found through compose.yml: the address is there already
+    const field = screen.getByRole('textbox', { name: 'Адрес Lampac' })
+    expect(field).toHaveValue('http://lampac:9118')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'http://lampac.lan:9118')
+    await userEvent.click(screen.getByRole('button', { name: /Вход/ }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Идентификатор (uid)' }))
+    await userEvent.type(await screen.findByLabelText('Идентификатор (uid)'), 'wrong')
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+    expect(await screen.findByText(/^Авторизация не принята/)).toBeInTheDocument()
+    await userEvent.clear(screen.getByLabelText('Идентификатор (uid)'))
+    await userEvent.type(screen.getByLabelText('Идентификатор (uid)'), 's3cret')
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+    expect(await screen.findByText('Lampac отвечает, вход принят. Источников: 12')).toBeInTheDocument()
+    expect(calls.filter((c) => c.url === `${X}admin/lampac` && c.method === 'PUT')).toHaveLength(0)
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(await screen.findByText('Сохранено и применено')).toBeInTheDocument()
+    const put = calls.find((c) => c.url === `${X}admin/lampac` && c.method === 'PUT')
+    expect(put?.body).toEqual({ url: 'http://lampac.lan:9118', authKey: 'uid', authValue: 's3cret', timeout: 0, sourcesWait: 0 })
+    expect(screen.getByText('Используется адрес отсюда')).toBeInTheDocument()
+    expect(screen.getByLabelText('Идентификатор (uid)')).toHaveValue('')
+    expect(screen.getByLabelText('Идентификатор (uid)')).toHaveAttribute('placeholder', 'Сохранено — введите, чтобы заменить')
+  })
+
+  it('turns a source off at once, saving the order and the ones off', async () => {
+    const calls = serveLampac()
+    mount(<Settings />)
+    expect(await screen.findByText('Не нашёл проверочный фильм')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('switch', { name: 'Alpha' }))
+    await waitFor(() =>
+      expect(calls.find((c) => c.url === `${X}admin/lampac/sources` && c.method === 'PUT')?.body).toEqual({ order: ['alpha', 'beta'], off: ['alpha'] }),
+    )
+    expect(screen.getByRole('switch', { name: 'Alpha' })).toHaveAttribute('aria-checked', 'false')
+  })
+})
+
+describe('«Онлайн» → Lampac on the server', () => {
+  it('the server’s address wins: the field is locked and says so', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === `${X}admin/lampac`)
+          return json({ url: '', source: 'override', server: true, authKey: '', authSet: false, authKeys: ['uid', 'shared_passwd'],
+            timeout: 0, sourcesWait: 0, defaultTimeout: 20, defaultSourcesWait: 15, minWait: 5, maxWait: 120 })
+        if (url === `${X}admin/settings`) return json({ enabled: true })
+        if (url === `${X}admin/status`) return json(ok)
+        if (url === `${X}admin/lampac/sources`) return json({ sources: [] })
+        return json({})
+      }),
+    )
+    mount(<Settings />)
+    expect(await screen.findByText(/^Задан на сервере \(ANTRESOL_ONLINE_LAMPAC_URL\) — он главнее/)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Адрес Lampac' })).toBeDisabled()
+    expect(screen.getByRole('link', { name: 'Как подключить Lampac — три шага' })).toHaveAttribute('href', expect.stringContaining('README.ru.md#подключение-lampac'))
   })
 })

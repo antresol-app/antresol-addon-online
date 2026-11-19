@@ -8,23 +8,27 @@ import { ApiError, ui } from '@antresol/addon-sdk'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { onlineSettings, onlineStatus, saveOnlineSettings } from '../api'
-import { useT, type TFunction } from '../i18n'
+import { lang, useT, type TFunction } from '../i18n'
 import { refreshAvailable } from '../ways'
 import { setTitle } from '../title'
 import type { OnlineStatus } from '../types'
+import { LampacConnection, LampacSources } from './LampacSettings'
 import m from './Manage.module.css'
 
 const { GroupedSection, ListLinkRow, ListRow, Toggle } = ui
 
-/** The documentation's page on Lampac: what it is, how to run it and how the server finds it. */
-export const LAMPAC_DOCS = 'https://github.com/antresol-app/antresol-addon-online/blob/main/README.ru.md#lampac--вспомогательная-служба'
+/** The documentation's three-step guide to connecting Lampac (running it, the address and sign-in, the check), in the page's language. */
+export const lampacDocs = () =>
+  lang() === 'en'
+    ? 'https://github.com/antresol-app/antresol-addon-online/blob/main/README.md#connecting-lampac'
+    : 'https://github.com/antresol-app/antresol-addon-online/blob/main/README.ru.md#подключение-lampac'
 
 /** What Lampac is and where to read how to connect it (under the switch, whatever the status). */
 export function LampacAbout({ t }: { t: TFunction }) {
   return (
     <>
       {t('settings.online.about')}{' '}
-      <a href={LAMPAC_DOCS} target="_blank" rel="noreferrer">
+      <a href={lampacDocs()} target="_blank" rel="noreferrer">
         {t('settings.online.docs')}
       </a>
     </>
@@ -49,6 +53,8 @@ export function Settings() {
   const [status, setStatus] = useState<OnlineStatus | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  // a saved connection asks Lampac's sources again
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     setTitle(t('settings.title'))
@@ -114,6 +120,14 @@ export function Settings() {
         </ListRow>
         <ListLinkRow label={t('status.title')} icon="globe" onOpen={() => navigate('/addons/online/status')} />
       </GroupedSection>
+      <LampacConnection
+        onSaved={() => {
+          setReload((n) => n + 1)
+          onlineStatus().then(setStatus, () => {})
+          void refreshAvailable()
+        }}
+      />
+      <LampacSources reload={reload} />
     </section>
   )
 }

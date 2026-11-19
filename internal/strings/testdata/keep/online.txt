@@ -5,3 +5,4 @@
 internal/online/lampac.go: ANTRESOL_ONLINE_LAMPAC_URL: неверный адрес  # startup config error, admin log only
 internal/online/tracking_scan.go: субтитры  # a word in Lampac voice names (matched, never shown)
 internal/online/tracking_scan.go: оригинал  # a word in Lampac voice names (matched, never shown)
+internal/boot/lampac.go: Дюна  # the probe title «Проверить» asks Lampac the sources of (sent to Lampac, never shown)

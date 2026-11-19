@@ -85,3 +85,13 @@
     font: var(--t-large-title);
   }
 }
+
+/* a source of «Источники Lampac»: its name, then its switch */
+.sourceRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  width: 100%;
+  min-width: 0;
+}

@@ -58,6 +58,8 @@ type Deps struct {
 	Usable func() bool
 	// Helper is the Lampac helper's line of the status (nil: left out).
 	Helper func() addonkit.HelperStatus
+	// Lampac is «Настройки»'s Lampac part (nil: its routes are 404).
+	Lampac LampacSettings
 }
 
 // API is the mounted routes.
@@ -92,6 +94,13 @@ func Register(mux *http.ServeMux, d Deps) *API {
 	admin("GET /api/admin/status", a.status)
 	admin("GET /api/admin/settings", a.getSettings)
 	admin("PUT /api/admin/settings", a.putSettings)
+	if d.Lampac != nil {
+		admin("GET /api/admin/lampac", a.getLampac)
+		admin("PUT /api/admin/lampac", a.putLampac)
+		admin("POST /api/admin/lampac/check", a.checkLampac)
+		admin("GET /api/admin/lampac/sources", a.getSources)
+		admin("PUT /api/admin/lampac/sources", a.putSources)
+	}
 	return a
 }
 
@@ -187,6 +196,7 @@ func onlineErr(w http.ResponseWriter, r *http.Request, err error) {
 		{online.ErrUnknownTitle, http.StatusBadRequest},
 		{online.ErrNoProfile, http.StatusBadRequest},
 		{online.ErrTitleUnavailable, http.StatusServiceUnavailable},
+		{online.ErrAuth, http.StatusBadGateway},
 		{online.ErrUnavailable, http.StatusServiceUnavailable},
 		{online.ErrSourceFailed, http.StatusBadGateway},
 		{online.ErrUnsupported, http.StatusUnsupportedMediaType},
