@@ -1,32 +1,61 @@
 # Antresol online addon
 
-«Watch online» of Antresol as an addon (contract 1,
-`docs/addons/contract.md` in the core): streaming sources for the movies and
-series of a title page, the watch progress of what was played there, and the
-titles outside the library that TV channels may air. It is a separate addon
-with its own repository and releases, not part of the core.
+[Русский](README.ru.md)
+
+Watch films and series without downloading them first: the title page of
+[Antresol](https://antresol-app.github.io/antresol/) gets a **Watch ▾ → Online**
+way, with sources, voice-overs and episodes, and the progress is saved as for
+the library. Adults only.
+
+## Install
+
+1. In Antresol: **Settings → Server → Extensions → Add Extension**, paste
+   `https://github.com/antresol-app/antresol-addon-online`, **Check**,
+   **Install**.
+2. Add Lampac, the helper service (below).
+3. Check: **Settings → Server → Online → Source Status** says the service
+   answers.
 
 ## Lampac (the helper service)
 
 The streams come from [Lampac](https://github.com/lampac-nextgen/lampac), a
-helper service the manifest declares (`helpers`). Add it to the same
-`compose.yml` as Antresol, under `services:`, with no `ports:`:
+program that runs next to the server. Add it to the same `compose.yml` as
+Antresol, under `services:`, next to `antresol`, with no `ports:`:
 
 ```yaml
+services:
+  antresol:
+    # ... as before
+
   lampac:
     image: ghcr.io/lampac-nextgen/lampac:1.84.3
     restart: unless-stopped
 ```
 
-and run `docker compose up -d`. The addon finds it by its service name
-(`http://lampac:9118`) within half a minute, with nothing to enter, and
-«Онлайн → Состояние источников» says where it is; while it is not found,
-that page shows the same block and the way stays hidden.
+Then run `docker compose up -d`. Within half a minute the addon finds it at
+`http://lampac:9118` by its service name: nothing to enter, no restart.
+**Settings → Server → Online** shows the state; while Lampac is not found, the
+**Source Status** page shows this same block and the Online way stays hidden.
 
-`ANTRESOL_ONLINE_LAMPAC_URL` (`http://<host>:<port>/?uid=<id>`) wins over
-the one found: use it for a Lampac that runs elsewhere, or one whose
-`accsdb` needs a user id. It is never shown in the app or logged beyond its
-scheme and host.
+### Lampac elsewhere
+
+If Lampac already runs elsewhere on your network, or its `accsdb` needs a
+user id, set the server's variable (in Antresol's `.env`, then
+`docker compose up -d`):
+
+```sh
+ANTRESOL_ONLINE_LAMPAC_URL=http://<host>:9118/?uid=<id>
+```
+
+It wins over the one found. It is never shown in the app or logged beyond its
+scheme and host. Use it too when Antresol does not run in Docker.
+
+## Where it shows up
+
+- A film's or series' page: **Watch ▾ → Online**: pick a source and a
+  voice-over; series get their seasons and episodes.
+- **Settings → Server → Online**: turn the way on or off, and the source status.
+- TV channels can air titles found online between library titles.
 
 ## Layout
 

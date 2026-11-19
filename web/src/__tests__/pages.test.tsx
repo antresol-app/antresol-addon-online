@@ -141,6 +141,9 @@ describe('«Состояние источников»', () => {
     serve({ enabled: true }, () => json({ configured: true, reachable: false, sources: 0, version: '' }))
     at()
     expect(await screen.findByText('Lampac не отвечает')).toBeInTheDocument()
+    // what Lampac is, and where the documentation says how to connect it
+    expect(screen.getByText(/Онлайн-источники даёт Lampac/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Как установить и подключить Lampac' })).toHaveAttribute('href', 'https://github.com/antresol-app/antresol-addon-online/blob/main/README.ru.md#lampac--вспомогательная-служба')
   })
 
   it('a helper service not found: what to add to compose.yml', async () => {

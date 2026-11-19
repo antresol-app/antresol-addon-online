@@ -16,6 +16,21 @@ import m from './Manage.module.css'
 
 const { GroupedSection, ListLinkRow, ListRow, Toggle } = ui
 
+/** The documentation's page on Lampac: what it is, how to run it and how the server finds it. */
+export const LAMPAC_DOCS = 'https://github.com/antresol-app/antresol-addon-online/blob/main/README.ru.md#lampac--вспомогательная-служба'
+
+/** What Lampac is and where to read how to connect it (under the switch, whatever the status). */
+export function LampacAbout({ t }: { t: TFunction }) {
+  return (
+    <>
+      {t('settings.online.about')}{' '}
+      <a href={LAMPAC_DOCS} target="_blank" rel="noreferrer">
+        {t('settings.online.docs')}
+      </a>
+    </>
+  )
+}
+
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
 
 /** What x/admin/status says, as the one status line (empty: not known). */
@@ -93,7 +108,7 @@ export function Settings() {
           {error}
         </div>
       )}
-      <GroupedSection>
+      <GroupedSection footer={<LampacAbout t={t} />}>
         <ListRow label={t('common.watchOnline')} hint={t('settings.online.hint')} status={statusLine(status, t)}>
           <Toggle label={t('common.watchOnline')} checked={enabled} disabled={saving || (notConfigured && !enabled)} onChange={change} />
         </ListRow>

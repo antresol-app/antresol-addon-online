@@ -5,7 +5,7 @@ import { ApiError, ui } from '@antresol/addon-sdk'
 import { useCallback, useEffect, useState } from 'react'
 import { onlineStatus } from '../api'
 import { useT } from '../i18n'
-import { statusLine } from './Settings'
+import { LampacAbout, statusLine } from './Settings'
 import { setTitle } from '../title'
 import type { OnlineStatus } from '../types'
 import m from './Manage.module.css'
@@ -65,7 +65,7 @@ export function Status() {
         </div>
       )}
       {status && (
-        <GroupedSection>
+        <GroupedSection footer={<LampacAbout t={t} />}>
           <ListRow label={t('status.service')}>
             <span className={m.value}>{service}</span>
           </ListRow>
