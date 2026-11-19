@@ -537,7 +537,8 @@ func (p *ProgressStore) SeedLibrary(ctx context.Context) error {
 		return fmt.Errorf("online progress: profiles: %w", err)
 	}
 	ids := map[string]int64{}
-	for _, u := range users {
+	// a separate history's rows are seeded into its own library progress
+	for _, u := range addonkit.HistoryProfiles(users) {
 		if u.UID != "" && !u.IsKid {
 			ids[u.UID] = u.ID
 		}

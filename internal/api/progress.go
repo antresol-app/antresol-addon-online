@@ -46,7 +46,9 @@ func (a *API) saveProgress(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	u := userOf(r)
+	// the request's history: a separate one (a shared TV) keeps its own
+	// positions under its uid; the limits stay the profile's
+	u := userOf(r).HistoryUser()
 	t, err := a.d.Online.Gate(r.Context(), u, in.Kind, in.TMDBID)
 	if err != nil {
 		onlineErr(w, r, err)
@@ -79,7 +81,7 @@ func (a *API) getProgress(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	u := userOf(r)
+	u := userOf(r).HistoryUser()
 	if _, err := a.d.Online.Gate(r.Context(), u, kind, id); err != nil {
 		onlineErr(w, r, err)
 		return

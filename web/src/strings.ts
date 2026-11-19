@@ -85,7 +85,7 @@ const en: Record<Key, string> = {
   'player.track.subtitlesN': 'Subtitles {n}',
   'settings.loadFailed': 'Couldn’t read the setting',
   'settings.online.helperMissing': 'The {name} service wasn’t found',
-  'settings.online.hint': 'Movies and TV shows from the server’s online sources, without downloading',
+  'settings.online.hint': 'Movies and shows from the server’s online sources, without downloading',
   'settings.online.notConfigured': 'Not set up on the server',
   'settings.online.sources': 'Online sources: {n}',
   'settings.online.unreachable': 'Lampac isn’t responding',

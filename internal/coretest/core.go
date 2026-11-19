@@ -58,7 +58,8 @@ func (c *Core) profileErr(userID int64) error {
 	if len(c.Profiles) == 0 {
 		return nil
 	}
-	for _, u := range c.Profiles {
+	// a profile's separate history is taken as the profile, as the core does
+	for _, u := range addonkit.HistoryProfiles(c.Profiles) {
 		if u.ID == userID {
 			if u.IsKid {
 				return &addonkit.APIError{Status: http.StatusBadRequest, Message: "kid profile"}

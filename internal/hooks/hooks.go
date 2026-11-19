@@ -136,6 +136,8 @@ func (h *hooks) dropDeleted(ctx context.Context) {
 		h.log().Warn("online: profiles not read, deleted profiles' rows kept until the next scan", "err", err)
 		return
 	}
+	// a profile's separate histories keep their rows too
+	us = addonkit.HistoryProfiles(us)
 	uids := make([]string, 0, len(us))
 	for _, u := range us {
 		uids = append(uids, u.UID)
@@ -166,7 +168,8 @@ func (h *hooks) homeContinue(ctx context.Context, u *addonkit.User, _ json.RawMe
 	if u == nil || u.IsKid || u.UID == "" || h.d.Progress == nil || (h.d.Available != nil && !h.d.Available()) {
 		return out, nil
 	}
-	es, err := h.d.Progress.Continue(ctx, *u, continueCards)
+	// the header's history: a device with a separate one continues its own
+	es, err := h.d.Progress.Continue(ctx, u.HistoryUser(), continueCards)
 	if err != nil {
 		return nil, err
 	}

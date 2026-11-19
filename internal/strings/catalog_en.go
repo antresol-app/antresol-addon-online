@@ -10,7 +10,7 @@ func init() {
 		// the gate and TMDB (the core's catalogs have the same keys; the
 		// addon registers its own)
 		"Недоступно для этого профиля":                                 "Not available for this profile",
-		"Неизвестный фильм или сериал":                                 "Unknown movie or TV show",
+		"Неизвестный фильм или сериал":                                 "Unknown movie or show",
 		"TMDB сейчас недоступен. Попробуйте позже":                     "TMDB is unavailable right now. Try again later",
 		"Профиль не найден":                                            "Profile not found",
 		"Недоступно в детском профиле":                                 "Not available in a kid profile",
