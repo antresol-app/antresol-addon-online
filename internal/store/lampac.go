@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 )
@@ -93,10 +92,34 @@ func (s Settings) LampacUID(ctx context.Context, renew bool) (string, error) {
 			return v, err
 		}
 	}
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
+	v, err := NewLampacUID()
+	if err != nil {
 		return "", err
 	}
-	v := "antresol-" + hex.EncodeToString(b)
 	return v, set(ctx, s.DB, keyLampacUID, v)
+}
+
+// uidAlphabet and uidRandom make a new id: "antresol" and 8 random [a-z0-9]
+// (16 characters). Lampac's Telegram sign-in bot (/start <uid>) takes only
+// 6–20 characters of [a-zA-Z0-9_-], so a new id fits it; an id saved
+// before (the older "antresol-<32 hex>") is kept as it is.
+const (
+	uidAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	uidRandom   = 8
+)
+
+// NewLampacUID is a new id for Lampac's accounts (see uidAlphabet).
+func NewLampacUID() (string, error) {
+	out := make([]byte, 0, uidRandom)
+	b := make([]byte, 1)
+	for len(out) < uidRandom {
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		if int(b[0]) >= 256-256%len(uidAlphabet) {
+			continue // no modulo bias
+		}
+		out = append(out, uidAlphabet[int(b[0])%len(uidAlphabet)])
+	}
+	return "antresol" + string(out), nil
 }

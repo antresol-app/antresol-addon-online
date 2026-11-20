@@ -184,6 +184,8 @@ export interface LampacSettings {
   defaultSourcesWait: number
   minWait: number
   maxWait: number
+  /** The addon's own id for Lampac's accounts (sent with the shared password; the one for Telegram's /start). */
+  uid?: string
 }
 
 /** PUT x/admin/lampac: `authValue` left out keeps the saved one; '' clears it. */

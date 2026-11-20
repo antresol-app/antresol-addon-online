@@ -26,6 +26,12 @@
 .helper {
   margin-top: var(--s-4);
 }
+.uid {
+  font: var(--t-mono);
+  color: var(--label);
+  user-select: all;
+  overflow-wrap: anywhere;
+}
 .code {
   margin-top: var(--s-2);
   padding: var(--s-3);

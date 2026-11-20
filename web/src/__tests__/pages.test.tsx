@@ -174,7 +174,7 @@ describe('«Состояние источников»', () => {
 
 describe('«Онлайн» → Lampac', () => {
   const LAMPAC = { url: '', composeUrl: 'http://lampac:9118', source: 'compose', server: false, authKey: '', authSet: false, authKeys: ['uid', 'account_email', 'token', 'box_mac'],
-    timeout: 0, sourcesWait: 0, defaultTimeout: 20, defaultSourcesWait: 15, minWait: 5, maxWait: 120 }
+    timeout: 0, sourcesWait: 0, defaultTimeout: 20, defaultSourcesWait: 15, minWait: 5, maxWait: 120, uid: 'antresolab12cd34' }
   function serveLampac() {
     const calls: Calls = []
     let saved = { ...LAMPAC }
@@ -240,6 +240,21 @@ describe('«Онлайн» → Lampac', () => {
     expect(screen.getByText('Используется адрес отсюда')).toBeInTheDocument()
     expect(screen.getByLabelText('Идентификатор (uid)')).toHaveValue('')
     expect(screen.getByLabelText('Идентификатор (uid)')).toHaveAttribute('placeholder', 'Сохранено — введите, чтобы заменить')
+  })
+
+  it('shows the addon’s uid for Lampac’s Telegram bot with a copy button, only for a uid sign-in', async () => {
+    serveLampac()
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    mount(<Settings />)
+    expect(await screen.findByText('Используется служба lampac из compose.yml')).toBeInTheDocument()
+    expect(screen.queryByText(/отправьте боту/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Вход/ }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Идентификатор (uid)' }))
+    expect(await screen.findByText('Если вход в Lampac через Telegram: отправьте боту /start antresolab12cd34 и сохраните')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Копировать' }))
+    expect(writeText).toHaveBeenCalledWith('antresolab12cd34')
+    expect(await screen.findByRole('button', { name: 'Скопировано' })).toBeInTheDocument()
   })
 
   it('turns a source off at once, saving the order and the ones off', async () => {

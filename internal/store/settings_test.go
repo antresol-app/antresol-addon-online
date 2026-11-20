@@ -3,8 +3,45 @@ package store
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"testing"
 )
+
+// TestLampacUID_FitsTelegramBot: a new id is 6–20 characters of
+// [a-zA-Z0-9_-] (Lampac's Telegram bot takes nothing else), kept once made;
+// an id saved before in the older long form stays as it is; renew makes a
+// new one of the new form.
+func TestLampacUID_FitsTelegramBot(t *testing.T) {
+	ctx := context.Background()
+	d := openDB(t)
+	s := Settings{DB: d.DB}
+	ok := regexp.MustCompile(`^antresol[a-z0-9]{8}$`)
+	uid, err := s.LampacUID(ctx, false)
+	if err != nil || !ok.MatchString(uid) || len(uid) < 6 || len(uid) > 20 {
+		t.Fatalf("new uid %q %v", uid, err)
+	}
+	if again, _ := s.LampacUID(ctx, false); again != uid {
+		t.Fatalf("not kept: %q then %q", uid, again)
+	}
+	old := "antresol-0123456789abcdef0123456789abcdef"
+	if _, err := d.Exec(`UPDATE settings SET value=? WHERE key='lampac_uid'`, old); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.LampacUID(ctx, false); got != old {
+		t.Fatalf("saved uid changed: %q", got)
+	}
+	if nu, _ := s.LampacUID(ctx, true); nu == old || !ok.MatchString(nu) {
+		t.Fatalf("renewed %q", nu)
+	}
+	seen := map[string]bool{}
+	for range 200 {
+		v, err := NewLampacUID()
+		if err != nil || !ok.MatchString(v) || seen[v] {
+			t.Fatalf("NewLampacUID %q %v", v, err)
+		}
+		seen[v] = true
+	}
+}
 
 // TestSettings_EnabledDefaultOn: no row is on; a saved value is read
 // back; a value that is not 1 or 0 is an error.

@@ -82,6 +82,10 @@ func TestSaveLampac(t *testing.T) {
 	if err != nil || v.URL != "http://lampac.lan:9118/" || !v.AuthSet || v.AuthKey != "uid" || v.Timeout != 40 || v.Source != HelperSettings {
 		t.Fatalf("view: %+v %v", v, err)
 	}
+	// the addon's own id, for Lampac's Telegram bot: short, never the account value
+	if uid, _ := b.Settings.LampacUID(ctx, false); v.UID != uid || len(uid) > 20 || uid == secret {
+		t.Fatalf("view uid %q, saved %q", v.UID, uid)
+	}
 	// the value kept when not sent again
 	if err := b.SaveLampac(ctx, LampacSave{URL: "http://lampac.lan:9118/", AuthKey: "uid"}); err != nil {
 		t.Fatal(err)

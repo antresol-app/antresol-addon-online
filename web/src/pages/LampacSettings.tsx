@@ -45,6 +45,32 @@ const authLabel = (key: string, t: TFunction): string => {
   return t('lampac.auth.none')
 }
 
+/**
+ * Lampac's Telegram sign-in (TelegramAuthBot) takes an id the admin sends
+ * the bot as /start <uid>: the addon's own id (sent with the shared
+ * password; for «Идентификатор» it is the value to type), with a copy button.
+ */
+function TelegramUid({ uid }: { uid: string }) {
+  const t = useT()
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    navigator.clipboard?.writeText(uid).then(
+      () => setCopied(true),
+      () => setCopied(false),
+    )
+  }
+  return (
+    <ListRow wide label={t('lampac.telegram')} hint={t('lampac.telegram.hint', { uid })}>
+      <span className={m.sourceRow}>
+        <code className={m.uid}>{uid}</code>
+        <Button type="button" variant="secondary" size="small" onClick={copy}>
+          {copied ? t('lampac.telegram.copied') : t('lampac.telegram.copy')}
+        </Button>
+      </span>
+    </ListRow>
+  )
+}
+
 export function LampacConnection({ onSaved }: { onSaved?: () => void }) {
   const t = useT()
   const [saved, setSaved] = useState<Settings | null>(null)
@@ -189,6 +215,7 @@ export function LampacConnection({ onSaved }: { onSaved?: () => void }) {
             />
           </ListRow>
         )}
+        {(authKey === 'uid' || authKey === 'shared_passwd') && saved.uid && <TelegramUid uid={saved.uid} />}
         <ListRow label={t('lampac.timeout')} hint={t('lampac.timeout.hint')}>
           <NumberField label={t('lampac.timeout')} value={timeout} min={saved.minWait} max={saved.maxWait} unit={t('lampac.sec')} chars={3}
             onChange={(v) => {

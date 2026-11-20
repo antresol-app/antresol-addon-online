@@ -149,6 +149,10 @@ type LampacView struct {
 	DefaultSourcesWait int `json:"defaultSourcesWait"`
 	MinWait            int `json:"minWait"`
 	MaxWait            int `json:"maxWait"`
+	// UID is the addon's own id for Lampac's accounts (made on first
+	// read): sent with the shared password, and the one to give Lampac's
+	// Telegram sign-in bot (/start <uid>). Not a secret: Lampac shows it.
+	UID string `json:"uid"`
 }
 
 // LampacView reads the saved settings for «Настройки».
@@ -161,6 +165,9 @@ func (b *Booted) LampacView(ctx context.Context) (LampacView, error) {
 		AuthSet: saved.AuthValue != "", AuthKeys: AuthKeys, Timeout: saved.Timeout, SourcesWait: saved.SourcesWait,
 		DefaultTimeout: int(online.DefaultCallTimeout / time.Second), DefaultSourcesWait: int(online.DefaultSourcesBudget / time.Second),
 		MinWait: MinWait, MaxWait: MaxWait, Source: addonkit.HelperNone}
+	if v.UID, err = b.Settings.LampacUID(ctx, false); err != nil {
+		return LampacView{}, err
+	}
 	if b.Helper != nil {
 		v.ComposeURL = b.Helper.Helper.Address()
 	}
