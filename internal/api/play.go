@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -100,36 +101,53 @@ type subTrack struct {
 // the app appends ?mk= to those URLs itself, and the playlists fetched
 // with one carry it on.
 func (a *API) play(w http.ResponseWriter, r *http.Request) {
-	svc := a.d.Online
-	if svc.Proxy == nil {
+	var in playRequest
+	if a.d.Online.Proxy == nil {
 		http.NotFound(w, r)
 		return
 	}
-	var in playRequest
 	if !decode(w, r, &in) {
 		return
 	}
-	u := userOf(r)
-	// the server's cap first: resolving is seconds of upstream work
-	if err := svc.Proxy.CanOpen(u.ID, in.ReplaceSession); err != nil {
+	st, err := a.startPlay(r.Context(), userOf(r), in)
+	if err != nil {
 		onlineErr(w, r, err)
 		return
 	}
-	ctx := r.Context()
+	addonkit.WriteJSON(w, http.StatusOK, st.body)
+}
+
+// started is a play that opened a proxy session: the answer for the
+// player, the session's id and what the ref resolved to.
+type started struct {
+	body map[string]any
+	sid  string
+	res  online.Resolved
+}
+
+// startPlay resolves in.Ref for u and opens a session for the stream
+// (the answer of play and of the app's run).
+func (a *API) startPlay(ctx context.Context, u online.User, in playRequest) (started, error) {
+	svc := a.d.Online
+	if svc.Proxy == nil {
+		return started{}, online.ErrOff
+	}
+	// the server's cap first: resolving is seconds of upstream work
+	if err := svc.Proxy.CanOpen(u.ID, in.ReplaceSession); err != nil {
+		return started{}, err
+	}
 	if h := capHeight(in.Caps.MaxHeight, u.MaxHeight); h > 0 {
 		ctx = online.WithMaxHeight(ctx, h)
 	}
 	res, err := svc.Resolve(ctx, u, in.Ref, in.Quality, in.Refresh)
 	if err != nil {
-		onlineErr(w, r, err)
-		return
+		return started{}, err
 	}
 	var warmSubs func()
 	res.Subtitles, warmSubs = svc.PlaySubtitles(ctx, res)
 	sid, err := svc.Proxy.Open(u.ID, res, in.ReplaceSession)
 	if err != nil {
-		onlineErr(w, r, err) // ErrBusy: no subtitle work for a play that is not
-		return
+		return started{}, err // ErrBusy: no subtitle work for a play that is not
 	}
 	warmSubs()
 	subs := make([]subTrack, 0, len(res.Subtitles))
@@ -141,11 +159,11 @@ func (a *API) play(w http.ResponseWriter, r *http.Request) {
 	if options == nil {
 		options = []string{}
 	}
-	addonkit.WriteJSON(w, http.StatusOK, map[string]any{
+	return started{sid: sid, res: res, body: map[string]any{
 		"mode": "online", "kind": res.Kind, "url": svc.Proxy.URL(sid, res.URL, ""), "startSec": max(in.StartSec, 0),
 		"durationMs": 0, "audio": []any{}, "audioIndex": -1, "subtitles": subs,
 		"quality": map[string]any{"options": options, "current": res.Quality}, "session": sid,
-	})
+	}}, nil
 }
 
 // capHeight is the cap of «Авто»: the lower of the request's caps and the

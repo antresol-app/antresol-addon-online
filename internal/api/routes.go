@@ -56,6 +56,9 @@ type Deps struct {
 	// Usable says Lampac can be asked: on the admin's address, or the
 	// helper service answers on its compose name (nil: always).
 	Usable func() bool
+	// Search is the TMDB the app's title search asks (nil: the app has no
+	// search from this addon).
+	Search TitleSearch
 	// Helper is the Lampac helper's line of the status (nil: left out).
 	Helper func() addonkit.HelperStatus
 	// Lampac is «Настройки»'s Lampac part (nil: its routes are 404).
@@ -64,13 +67,14 @@ type Deps struct {
 
 // API is the mounted routes.
 type API struct {
-	d       Deps
-	posters *posters
+	d        Deps
+	posters  *posters
+	sessions *appSessions
 }
 
 // Register mounts the routes on mux (the addon's /api/… paths).
 func Register(mux *http.ServeMux, d Deps) *API {
-	a := &API{d: d}
+	a := &API{d: d, sessions: &appSessions{}}
 	if d.Progress != nil && d.CacheImage != nil {
 		a.posters = newPosters(d.CacheImage, d.Progress.SetPoster)
 	}
@@ -89,6 +93,14 @@ func Register(mux *http.ServeMux, d Deps) *API {
 	handle("GET /api/progress", on(a.getProgress))
 	handle("PUT /api/progress", on(a.saveProgress))
 	handle("GET /api/available", a.available)
+	// the app protocol (app.go, app_run.go): the way as data for the native apps
+	handle("GET /api/app", on(a.appInfo))
+	handle("GET /api/app/search", on(a.appSearch))
+	handle("POST /api/app/step", on(a.appStep))
+	handle("POST /api/app/run", on(a.appRun))
+	handle("PUT /api/app/progress", on(a.appProgress))
+	handle("DELETE /api/app/play/{session}", on(a.appClose))
+	handle("GET /api/app/state", on(a.appState))
 
 	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, adults(addonkit.RequireAdmin(h))) }
 	admin("GET /api/admin/status", a.status)

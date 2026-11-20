@@ -174,6 +174,9 @@ func errOf(w *httptest.ResponseRecorder) string {
 // playFake is a synthetic Lampac (lampac.test:9118) and CDN (cdn.example),
 // reached through a client that maps those names to test servers.
 type playFake struct {
+	// extra answers a Lampac request first (true: it did); a test sets it
+	// before its first request
+	extra atomic.Pointer[func(w http.ResponseWriter, r *http.Request) bool]
 	svc   *online.Service
 	calls atomic.Int32 // hits of the call endpoint
 	cdn   atomic.Int32 // CDN requests
@@ -187,6 +190,9 @@ func newPlayFake(t *testing.T) *playFake {
 	lamp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("uid") != "secret" {
 			w.Write([]byte(`{"accsdb":true}`))
+			return
+		}
+		if h := f.extra.Load(); h != nil && (*h)(w, r) {
 			return
 		}
 		switch r.URL.Path {

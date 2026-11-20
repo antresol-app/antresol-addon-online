@@ -137,8 +137,12 @@ func main() {
 			mmu.Lock()
 			defer mmu.Unlock()
 			mux := http.NewServeMux()
-			a = api.Register(mux, api.Deps{Online: svc, Progress: b.Progress, CacheImage: core.CacheImage,
-				Enabled: b.Enabled, SetEnabled: b.SetEnabled, Usable: b.Usable, Helper: b.HelperStatus, Lampac: b})
+			deps := api.Deps{Online: svc, Progress: b.Progress, CacheImage: core.CacheImage,
+				Enabled: b.Enabled, SetEnabled: b.SetEnabled, Usable: b.Usable, Helper: b.HelperStatus, Lampac: b}
+			if tm != nil { // no TMDB: the app has no search from this addon
+				deps.Search = tm
+			}
+			a = api.Register(mux, deps)
 			routes.set(mux)
 			hd := hooks.Deps{Progress: b.Progress, DB: b.DB.DB, Users: core,
 				Available: func() bool { return b.Usable() && b.Enabled() }, Helpers: b.HelpersStatus}

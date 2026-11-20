@@ -46,28 +46,32 @@ func (a *API) saveProgress(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	// the request's history: a separate one (a shared TV) keeps its own
-	// positions under its uid; the limits stay the profile's
-	u := userOf(r).HistoryUser()
-	t, err := a.d.Online.Gate(r.Context(), u, in.Kind, in.TMDBID)
-	if err != nil {
+	if err := a.saveEntry(r.Context(), userOf(r), in); err != nil {
 		onlineErr(w, r, err)
 		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// saveEntry records a position of u's history (behind the kid and rating
+// gate of the title).
+func (a *API) saveEntry(ctx context.Context, profile online.User, in progressRequest) error {
+	// the request's history: a separate one (a shared TV) keeps its own
+	// positions under its uid; the limits stay the profile's
+	u := profile.HistoryUser()
+	t, err := a.d.Online.Gate(ctx, u, in.Kind, in.TMDBID)
+	if err != nil {
+		return err
 	}
 	var at time.Time
 	if in.UpdatedAt != nil {
 		at = *in.UpdatedAt
 	}
 	// the title as of now goes with the entry: «Продолжить» reads no TMDB
-	err = a.d.Progress.Save(r.Context(), u, online.Entry{Kind: in.Kind, TMDBID: in.TMDBID, Season: in.Season, Episode: in.Episode,
+	return a.d.Progress.Save(ctx, u, online.Entry{Kind: in.Kind, TMDBID: in.TMDBID, Season: in.Season, Episode: in.Episode,
 		PositionMs: in.PositionMs, DurationMs: in.DurationMs, Source: in.Source, Voice: in.Voice, Quality: in.Quality,
 		Title: t.Title, Rating: t.Rating, Year: t.Year, Poster: a.posters.name(t.Poster, in.Kind, in.TMDBID),
 		NextSeason: in.NextSeason, NextEpisode: in.NextEpisode, LastListed: in.LastListed, At: at})
-	if err != nil {
-		onlineErr(w, r, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // getProgress: GET /api/progress?kind=movie|series&tmdbId=N — a title's
