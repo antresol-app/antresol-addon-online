@@ -5,6 +5,7 @@ import (
 	"context"
 	"regexp"
 	"testing"
+	"time"
 )
 
 // TestLampacUID_FitsTelegramBot: a new id is 6–20 characters of
@@ -95,5 +96,44 @@ func TestSettings_KeysCreatedOnceAndKept(t *testing.T) {
 	}
 	if _, _, err := (Settings{DB: d2.DB}).Keys(ctx); err == nil {
 		t.Fatal("a stored key that is not hex was used")
+	}
+}
+
+// TestKnownSources: none saved is the zero value; a save is read back
+// with its time, over a reopen, and a later save replaces it.
+func TestKnownSources(t *testing.T) {
+	ctx := context.Background()
+	d := openDB(t)
+	s := Settings{DB: d.DB}
+	if k, err := s.KnownSources(ctx); err != nil || len(k.Shown) != 0 || !k.At.IsZero() {
+		t.Fatalf("none saved: %+v %v", k, err)
+	}
+	before := time.Now().Add(-time.Second)
+	if err := s.SetKnownSources(ctx, map[string]bool{"alpha": true, "beta": false}); err != nil {
+		t.Fatal(err)
+	}
+	dir := d.Dir
+	d.Close()
+	d2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d2.Close()
+	s = Settings{DB: d2.DB}
+	k, err := s.KnownSources(ctx)
+	if err != nil || len(k.Shown) != 2 || !k.Shown["alpha"] || k.Shown["beta"] || k.At.Before(before) || k.At.After(time.Now().Add(time.Second)) {
+		t.Fatalf("after reopen: %+v %v", k, err)
+	}
+	if err := s.SetKnownSources(ctx, map[string]bool{"gamma": true}); err != nil {
+		t.Fatal(err)
+	}
+	if k, _ := s.KnownSources(ctx); len(k.Shown) != 1 || !k.Shown["gamma"] {
+		t.Fatalf("replaced: %+v", k)
+	}
+	if _, err := d2.Exec(`UPDATE settings SET value='{' WHERE key='known_sources'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.KnownSources(ctx); err == nil {
+		t.Fatal("a stored value that is not JSON was used")
 	}
 }

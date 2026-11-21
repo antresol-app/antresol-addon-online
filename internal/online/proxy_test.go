@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -190,6 +191,128 @@ func TestProxyHeadersAndRange(t *testing.T) {
 		t.Fatalf("%d upstream requests without the session's headers", bad.Load())
 	}
 }
+
+// A byte-range answer says so to the player: Accept-Ranges: bytes after a
+// 206 or a Content-Range even when the source leaves the header out, and
+// after an upstream's own bytes in any case; a source that says none (or
+// nothing, on a whole answer) is not promoted.
+func TestProxyAcceptRanges(t *testing.T) {
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		switch r.URL.Path {
+		case "/partial.mp4": // a 206 with no Accept-Ranges
+			w.Header().Set("Content-Range", "bytes 0-9/100")
+			w.WriteHeader(206)
+			w.Write([]byte("0123456789"))
+		case "/shout.mp4": // the header in another case
+			w.Header().Set("Accept-Ranges", "Bytes")
+			w.Write([]byte("0123456789"))
+		case "/whole.mp4": // a whole answer that says nothing of ranges
+			w.Write([]byte("0123456789"))
+		case "/none.mp4":
+			w.Header().Set("Accept-Ranges", "none")
+			w.Write([]byte("0123456789"))
+		case "/past.mp4":
+			w.Header().Set("Content-Range", "bytes */100")
+			w.WriteHeader(416)
+		}
+	}))
+	defer cdn.Close()
+	base := "http://cdn.example:" + portOf(cdn)
+	p := &Proxy{Key: proxyKey, HTTP: testNet(t, "lampac.test:9", []string{"cdn.example"}, cdn.Listener.Addr().String())}
+	sid, err := p.Open(1, Resolved{Kind: "mp4", URL: base + "/whole.mp4", Headers: http.Header{}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		path string
+		code int
+		want string
+		hdr  []string
+	}{
+		{"/partial.mp4", 206, "bytes", []string{"Range", "bytes=0-9"}},
+		{"/shout.mp4", 200, "bytes", nil},
+		{"/whole.mp4", 200, "", nil},
+		{"/none.mp4", 200, "none", nil},
+		{"/past.mp4", 416, "bytes", []string{"Range", "bytes=500-"}},
+	} {
+		w := get(p, 1, p.URL(sid, base+c.path, ""), c.hdr...)
+		if w.Code != c.code || w.Header().Get("Accept-Ranges") != c.want {
+			t.Errorf("%s: %d Accept-Ranges %q, want %d %q", c.path, w.Code, w.Header().Get("Accept-Ranges"), c.code, c.want)
+		}
+	}
+}
+
+// One INFO line per play start: the source, how long resolving took and how
+// long after the session opened the first body byte went out. An error
+// answer is no start, and later requests add no line.
+func TestProxyLogsPlayStartOnce(t *testing.T) {
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/gone.mp4" {
+			w.WriteHeader(403)
+			return
+		}
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Write([]byte("0123456789"))
+	}))
+	defer cdn.Close()
+	base := "http://cdn.example:" + portOf(cdn)
+	var logged strings.Builder
+	var mu sync.Mutex
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	p := &Proxy{Key: proxyKey, HTTP: testNet(t, "lampac.test:9", []string{"cdn.example"}, cdn.Listener.Addr().String()),
+		Log: slog.New(slog.NewTextHandler(writerFunc(func(b []byte) (int, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return logged.Write(b)
+		}), nil)),
+		Now: func() time.Time { return now }}
+	sid, err := p.Open(1, Resolved{Kind: "mp4", URL: base + "/v.mp4", Headers: http.Header{}, Took: 1234 * time.Millisecond,
+		Ctx: RefContext{Kind: "movie", TMDBID: 1, Source: "alpha"}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		var out []string
+		for _, l := range strings.Split(logged.String(), "\n") {
+			if strings.Contains(l, "play started") {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	// an expired link answers an error: no start yet
+	if w := get(p, 1, p.URL(sid, base+"/gone.mp4", "")); w.Code != 410 {
+		t.Fatalf("gone: %d", w.Code)
+	}
+	if n := len(lines()); n != 0 {
+		t.Fatalf("%d lines after an error answer", n)
+	}
+	now = now.Add(2500 * time.Millisecond)
+	if w := get(p, 1, p.URL(sid, base+"/v.mp4", "")); w.Code != 200 || w.Body.String() != "0123456789" {
+		t.Fatalf("first: %d %q", w.Code, w.Body)
+	}
+	got := lines()
+	if len(got) != 1 || !strings.Contains(got[0], "level=INFO") || !strings.Contains(got[0], "source=alpha") ||
+		!strings.Contains(got[0], "kind=mp4") || !strings.Contains(got[0], "resolve_ms=1234") || !strings.Contains(got[0], "first_byte_ms=2500") {
+		t.Fatalf("lines: %q", got)
+	}
+	if strings.Contains(got[0], base) || strings.Contains(got[0], sid) {
+		t.Fatalf("the line names a URL or the session: %q", got[0])
+	}
+	// the next request of the session adds none
+	get(p, 1, p.URL(sid, base+"/v.mp4", ""))
+	if n := len(lines()); n != 1 {
+		t.Fatalf("%d lines after a second request", n)
+	}
+}
+
+// writerFunc is an io.Writer of a func.
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(b []byte) (int, error) { return f(b) }
 
 func TestUpstream403BecomesExpired(t *testing.T) {
 	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

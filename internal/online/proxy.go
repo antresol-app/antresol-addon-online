@@ -138,6 +138,8 @@ type session struct {
 	// place of a second fetch until rootUntil.
 	root      *rootRead
 	rootUntil time.Time
+	// startLogged: the play-start line was written (p.mu held)
+	startLogged bool
 }
 
 // longRef is the sealed form of a reference to session.long[n].
@@ -565,6 +567,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, sid, blob string) 
 		return
 	}
 	defer p.end(s)
+	w = p.watchFirstByte(w, s)
 	// the request ends with the session (Close, replace, prune)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -611,6 +614,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, sid, blob string) 
 		if cr := resp.Header.Get("Content-Range"); validHeader(cr) {
 			w.Header().Set("Content-Range", cr)
 		}
+		w.Header().Set("Accept-Ranges", "bytes") // it understood the range, which was past the end
 		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 		return
 	default:
@@ -654,10 +658,24 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, sid, blob string) 
 			wh.Set(k, v)
 		}
 	}
+	if rangeCapable(resp) {
+		// a player seeks only where the answer says bytes can be asked
+		// for; a partial answer proves it, whatever the source's headers
+		wh.Set("Accept-Ranges", "bytes")
+	}
 	w.WriteHeader(resp.StatusCode)
 	if r.Method != http.MethodHead {
 		p.relay(w, br, s)
 	}
+}
+
+// rangeCapable: the upstream answer shows it serves byte ranges: a 206, a
+// Content-Range, or an Accept-Ranges of bytes (any case).
+func rangeCapable(resp *http.Response) bool {
+	if resp.StatusCode == http.StatusPartialContent || validHeader(resp.Header.Get("Content-Range")) {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(resp.Header.Get("Accept-Ranges")), "bytes")
 }
 
 // playlist rewrites a playlist answer and streams it out: one rewrite per
@@ -876,6 +894,63 @@ func (p *Proxy) relay(w http.ResponseWriter, src io.Reader, s *session) {
 			return
 		}
 	}
+}
+
+// firstByteWriter tells the proxy when the session's first answer body
+// byte goes out (an error answer does not count).
+type firstByteWriter struct {
+	http.ResponseWriter
+	status int
+	first  func()
+}
+
+func (f *firstByteWriter) WriteHeader(code int) {
+	if f.status == 0 {
+		f.status = code
+	}
+	f.ResponseWriter.WriteHeader(code)
+}
+
+func (f *firstByteWriter) Write(b []byte) (int, error) {
+	if f.status == 0 {
+		f.status = http.StatusOK
+	}
+	n, err := f.ResponseWriter.Write(b)
+	if n > 0 && f.first != nil && f.status < 400 {
+		first := f.first
+		f.first = nil
+		first()
+	}
+	return n, err
+}
+
+// Unwrap lets http.ResponseController reach the connection (flush,
+// deadlines).
+func (f *firstByteWriter) Unwrap() http.ResponseWriter { return f.ResponseWriter }
+
+// watchFirstByte wraps w until the session's play-start line is written:
+// one INFO line per play start with the source, how long resolving took
+// (Resolved.Took) and how long after the session opened its first body
+// byte went out. Once logged, w comes back as it is.
+func (p *Proxy) watchFirstByte(w http.ResponseWriter, s *session) http.ResponseWriter {
+	p.mu.Lock()
+	done := s.startLogged
+	p.mu.Unlock()
+	if done {
+		return w
+	}
+	return &firstByteWriter{ResponseWriter: w, first: func() {
+		p.mu.Lock()
+		if s.startLogged {
+			p.mu.Unlock()
+			return
+		}
+		s.startLogged = true
+		firstByte := p.now().Sub(s.created)
+		p.mu.Unlock()
+		p.log().Info("online: play started", "source", s.r.Ctx.Source, "kind", s.r.Kind,
+			"resolve_ms", s.r.Took.Milliseconds(), "first_byte_ms", firstByte.Milliseconds())
+	}}
 }
 
 // deadlineWriter renews the connection's write deadline before each write

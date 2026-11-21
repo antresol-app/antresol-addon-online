@@ -1,10 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
+	"log/slog"
 	"net/http/httptest"
 	"os/exec"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/antresol-app/antresol/addonkit"
@@ -61,6 +65,53 @@ func TestPlay_URLsUnderProxyBase(t *testing.T) {
 		}
 	}
 }
+
+// A play start is one INFO line, written when the first byte goes out: the
+// source of the ref, the resolve time startPlay measured, the first byte.
+func TestPlay_LogsStartOnce(t *testing.T) {
+	f := newPlayFake(t)
+	var logged bytes.Buffer
+	var mu sync.Mutex
+	f.svc.Proxy.Log = slog.New(slog.NewTextHandler(writerFunc(func(b []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return logged.Write(b)
+	}), nil))
+	e := newEnv(t, f.svc)
+	refs, _ := fileRefs(t, e, admin, "438631")
+	a, w := e.play(t, admin, playBody(refs[0], ""))
+	if w.Code != 200 {
+		t.Fatalf("play: %d %s", w.Code, w.Body)
+	}
+	mu.Lock()
+	before := strings.Count(logged.String(), "play started")
+	mu.Unlock()
+	if before != 0 {
+		t.Fatalf("a start logged before any byte went out")
+	}
+	for range 2 {
+		if pl := e.do("GET", a.URL, "", admin); pl.Code != 200 {
+			t.Fatalf("playlist: %d", pl.Code)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	var lines []string
+	for _, l := range strings.Split(logged.String(), "\n") {
+		if strings.Contains(l, "play started") {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "level=INFO") || !strings.Contains(lines[0], "source=") ||
+		!regexp.MustCompile(`resolve_ms=\d+`).MatchString(lines[0]) || !regexp.MustCompile(`first_byte_ms=\d+`).MatchString(lines[0]) {
+		t.Fatalf("lines: %q", lines)
+	}
+}
+
+// writerFunc is an io.Writer of a func.
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(b []byte) (int, error) { return f(b) }
 
 // A stale link mid-play: the source's 410 (or 403/404) reaches the player
 // as the proxy's 410 with its body and marker, unchanged by the route, so

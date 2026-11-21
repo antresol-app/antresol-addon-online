@@ -105,6 +105,15 @@ func origin(raw string) string {
 // build makes the service on conn and puts it in force.
 func (b *Booted) build(conn *lampacConn) *online.Service {
 	svc := newOnline(b.cfg, conn, b.refKey, b.proxyKey, b.serving, b.sourcePrefs)
+	if svc != nil {
+		// the balancers the lists named survive a restart (a resume need
+		// not wait for a title's whole list)
+		svc.LoadKnown = func(ctx context.Context) (map[string]bool, time.Time, error) {
+			k, err := b.Settings.KnownSources(ctx)
+			return k.Shown, k.At, err
+		}
+		svc.SaveKnown = b.Settings.SetKnownSources
+	}
 	b.conn.Store(conn)
 	b.svc.Store(svc)
 	return svc

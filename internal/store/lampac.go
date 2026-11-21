@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // The Lampac settings of «Онлайн» (rows of the settings table): the
@@ -14,6 +15,7 @@ const (
 	keyLampac        = "lampac"
 	keyLampacSources = "lampac_sources"
 	keyLampacUID     = "lampac_uid"
+	keyKnownSources  = "known_sources"
 )
 
 // Lampac is the Lampac connection the admin saved. An empty URL means
@@ -37,6 +39,15 @@ type Lampac struct {
 type LampacSources struct {
 	Order []string `json:"order,omitempty"`
 	Off   []string `json:"off,omitempty"`
+}
+
+// KnownSources is what the last source lists said of each balancer: listed
+// shown and non-rch (true) or not (false). At is when it was saved. Kept
+// across restarts so that a resume does not wait for a title's whole list
+// to learn which sources exist (online.Service.Source).
+type KnownSources struct {
+	Shown map[string]bool `json:"shown"`
+	At    time.Time       `json:"at"`
 }
 
 func getJSON(ctx context.Context, q querier, key string, v any) error {
@@ -122,4 +133,16 @@ func NewLampacUID() (string, error) {
 		out = append(out, uidAlphabet[int(b[0])%len(uidAlphabet)])
 	}
 	return "antresol" + string(out), nil
+}
+
+// KnownSources reads the saved balancers (none: the zero value).
+func (s Settings) KnownSources(ctx context.Context) (KnownSources, error) {
+	var k KnownSources
+	err := getJSON(ctx, s.DB, keyKnownSources, &k)
+	return k, err
+}
+
+// SetKnownSources saves them, stamped now.
+func (s Settings) SetKnownSources(ctx context.Context, shown map[string]bool) error {
+	return setJSON(ctx, s.DB, keyKnownSources, KnownSources{Shown: shown, At: time.Now().UTC()})
 }

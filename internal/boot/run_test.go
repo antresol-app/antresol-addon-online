@@ -251,6 +251,35 @@ func TestBoot_BuildsOnline(t *testing.T) {
 	}
 }
 
+// TestBoot_KnownSourcesSurviveRestart: the service saves the balancers its
+// lists named in the addon's own store, and the next start loads them.
+func TestBoot_KnownSourcesSurviveRestart(t *testing.T) {
+	data := t.TempDir()
+	ctx := context.Background()
+	b, err := run(t, Config{DataDir: data, LampacURL: "http://127.0.0.1:9118"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Online.LoadKnown == nil || b.Online.SaveKnown == nil {
+		t.Fatal("the service keeps no balancers across a restart")
+	}
+	if shown, _, err := b.Online.LoadKnown(ctx); err != nil || len(shown) != 0 {
+		t.Fatalf("a fresh store: %v %v", shown, err)
+	}
+	if err := b.Online.SaveKnown(ctx, map[string]bool{"alpha": true, "beta": false}); err != nil {
+		t.Fatal(err)
+	}
+	b.Close()
+	b2, err := run(t, Config{DataDir: data, LampacURL: "http://127.0.0.1:9118"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown, at, err := b2.Online.LoadKnown(ctx)
+	if err != nil || len(shown) != 2 || !shown["alpha"] || shown["beta"] || time.Since(at) > time.Minute {
+		t.Fatalf("after a restart: %v %v %v", shown, at, err)
+	}
+}
+
 // TestBoot_RemovesImportLeftoverWithoutSource: a start with no import
 // source set (any more) still deletes an earlier run's snapshot.
 func TestBoot_RemovesImportLeftoverWithoutSource(t *testing.T) {

@@ -3,6 +3,7 @@ package online
 import (
 	"context"
 	"errors"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -704,5 +705,140 @@ func TestFlightFillsCacheWhenCallersLeave(t *testing.T) {
 	}
 	if _, err := s.levelBody(context.Background(), "/lite/alpha?id=1"); err != nil || levels.Load() != 1 {
 		t.Fatalf("level asked %d times: %v", levels.Load(), err)
+	}
+}
+
+// fakeKnownStore is the saved balancers of a Service: Save keeps the last
+// map and tells saved.
+type fakeKnownStore struct {
+	mu    sync.Mutex
+	shown map[string]bool
+	at    time.Time
+	err   error
+	saves int
+	saved chan struct{}
+}
+
+func newFakeKnownStore() *fakeKnownStore { return &fakeKnownStore{saved: make(chan struct{}, 10)} }
+
+func (f *fakeKnownStore) attach(s *Service) {
+	s.LoadKnown = func(context.Context) (map[string]bool, time.Time, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return maps.Clone(f.shown), f.at, f.err
+	}
+	s.SaveKnown = func(_ context.Context, shown map[string]bool) error {
+		f.mu.Lock()
+		f.shown, f.at, f.saves = maps.Clone(shown), time.Now(), f.saves+1
+		f.mu.Unlock()
+		f.saved <- struct{}{}
+		return nil
+	}
+}
+
+func (f *fakeKnownStore) waitSaved(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.saved:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the balancers were not saved")
+	}
+}
+
+func eventsHandler(t *testing.T, events *atomic.Int32) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/externalids":
+			w.Write([]byte(`{"imdb_id":"tt1160419","kinopoisk_id":123}`))
+		case "/lite/events":
+			events.Add(1)
+			w.Write(fixture(t, "events.json"))
+		default:
+			t.Errorf("unexpected %s", r.URL)
+		}
+	})
+}
+
+// The balancers a list named are saved, once, and a service made after a
+// restart answers Source for a shown one at once, without the title's list.
+func TestKnownSourcesSurviveRestart(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeKnownStore()
+	var events1 atomic.Int32
+	s1 := fakeService(t, eventsHandler(t, &events1), dune)
+	store.attach(s1)
+	if _, err := s1.Sources(ctx, adult(), "movie", 438631); err != nil {
+		t.Fatal(err)
+	}
+	store.waitSaved(t)
+	if store.shown["alpha"] != true || store.shown["beta"] != false || store.shown["gamma"] != false {
+		t.Fatalf("saved %v", store.shown)
+	}
+	// another title lists the same: nothing changed, nothing saved again
+	if _, err := s1.Sources(ctx, adult(), "movie", 438632); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if store.saves != 1 {
+		t.Fatalf("saved %d times, want once", store.saves)
+	}
+
+	// after the restart: a shown balancer needs no events, a hidden or unknown one still waits for them
+	var events2 atomic.Int32
+	s2 := fakeService(t, eventsHandler(t, &events2), dune)
+	store.attach(s2)
+	got, err := s2.Source(ctx, adult(), "movie", 438631, "alpha")
+	if err != nil || got.ID != "alpha" || got.Ref == "" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if events2.Load() != 0 {
+		t.Fatalf("Source waited for /lite/events %d times after a restart", events2.Load())
+	}
+	if _, err := s2.Source(ctx, adult(), "movie", 438631, "beta"); err != ErrNothing || events2.Load() != 1 {
+		t.Fatalf("a hidden balancer: %v, events %d", err, events2.Load())
+	}
+}
+
+// Saved balancers older than a week, unreadable ones, and a service with no
+// store are not believed: Source waits for the list as before.
+func TestKnownSourcesNotBelieved(t *testing.T) {
+	ctx := context.Background()
+	for name, edit := range map[string]func(f *fakeKnownStore){
+		"stale":   func(f *fakeKnownStore) { f.at = time.Now().Add(-knownMaxAge - time.Hour) },
+		"error":   func(f *fakeKnownStore) { f.err = errors.New("db gone") },
+		"no data": func(f *fakeKnownStore) { f.shown = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newFakeKnownStore()
+			store.shown, store.at = map[string]bool{"alpha": true}, time.Now()
+			edit(store)
+			var events atomic.Int32
+			s := fakeService(t, eventsHandler(t, &events), dune)
+			store.attach(s)
+			got, err := s.Source(ctx, adult(), "movie", 438631, "alpha")
+			if err != nil || got.ID != "alpha" {
+				t.Fatalf("%+v %v", got, err)
+			}
+			if events.Load() != 1 {
+				t.Fatalf("events asked %d times, want 1 (the list is awaited)", events.Load())
+			}
+		})
+	}
+}
+
+// Balancers saved a day ago are saved again by the next list, so their age
+// is that of the last confirmation.
+func TestKnownSourcesRefreshed(t *testing.T) {
+	store := newFakeKnownStore()
+	store.shown, store.at = map[string]bool{"alpha": true, "beta": false, "gamma": false}, time.Now().Add(-2*knownRefresh)
+	var events atomic.Int32
+	s := fakeService(t, eventsHandler(t, &events), dune)
+	store.attach(s)
+	if _, err := s.Sources(context.Background(), adult(), "movie", 438631); err != nil {
+		t.Fatal(err)
+	}
+	store.waitSaved(t)
+	if time.Since(store.at) > time.Minute {
+		t.Fatalf("saved at %v", store.at)
 	}
 }

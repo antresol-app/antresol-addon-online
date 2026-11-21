@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"mime"
 	"net/http"
 	"net/url"
@@ -117,7 +118,27 @@ type Service struct {
 
 	kmu   sync.Mutex
 	known map[string]bool // balancer → listed shown and non-rch by the last events naming it
+	kver  uint64          // known's revision, for the saves (under kmu)
+	kat   time.Time       // when known was last saved or loaded: an unchanged one is saved again once a day, so its age is the last confirmation's
+
+	// LoadKnown and SaveKnown keep known across restarts (nil: in memory
+	// only): without them a resume after a start waits for the title's
+	// whole list (3–10 s) to learn the source exists. LoadKnown returns the
+	// saved balancers and when they were saved.
+	LoadKnown func(ctx context.Context) (shown map[string]bool, at time.Time, err error)
+	SaveKnown func(ctx context.Context, shown map[string]bool) error
+	smu       sync.Mutex // saves, one at a time
+	saved     uint64     // the revision last saved (under smu)
 }
+
+// knownMaxAge is how old saved balancers may be to be believed after a
+// start (a Lampac's balancers change rarely; a stale one fails its browse
+// and the client falls back to the list).
+const knownMaxAge = 7 * 24 * time.Hour
+
+// knownRefresh: unchanged balancers are saved again after this long, so
+// their saved age tells when a list last confirmed them.
+const knownRefresh = 24 * time.Hour
 
 type titleKey struct {
 	kind string
@@ -140,10 +161,65 @@ func (s *Service) init() {
 			c = upstreamFor(s.L)
 		}
 		s.up = upstream{http: c, lampac: s.L}
+		s.loadKnown()
 		if s.Proxy != nil && s.Proxy.Subs == nil {
 			s.Proxy.Subs = s.Subs // before the first session opens
 		}
 	})
+}
+
+// loadKnown reads the saved balancers (init): within knownMaxAge, and
+// never over what the lists have told already.
+func (s *Service) loadKnown() {
+	if s.LoadKnown == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	shown, at, err := s.LoadKnown(ctx)
+	if err != nil {
+		s.log().Warn("online: saved sources do not read; the first lists teach them again", "err", err)
+		return
+	}
+	if len(shown) == 0 || time.Since(at) > knownMaxAge {
+		return
+	}
+	s.kmu.Lock()
+	defer s.kmu.Unlock()
+	s.kat = at
+	if s.known == nil {
+		s.known = map[string]bool{}
+	}
+	for id, ok := range shown {
+		if _, have := s.known[id]; !have && balanserRe.MatchString(id) && len(s.known) < maxKnown {
+			s.known[id] = ok
+		}
+	}
+}
+
+// maxKnown bounds the balancers remembered.
+const maxKnown = 1000
+
+// saveKnown saves the balancers of revision ver, in the background; a save
+// of an older revision that comes after a newer one is dropped.
+func (s *Service) saveKnown(shown map[string]bool, ver uint64) {
+	if s.SaveKnown == nil {
+		return
+	}
+	go func() {
+		s.smu.Lock()
+		defer s.smu.Unlock()
+		if ver <= s.saved {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.SaveKnown(ctx, shown); err != nil {
+			s.log().Warn("online: sources not saved", "err", err)
+			return
+		}
+		s.saved = ver
+	}()
 }
 
 func (s *Service) log() *slog.Logger {
@@ -356,12 +432,27 @@ func (s *Service) sourcesOf(evs []Event, kind string, tmdbID int, card string) [
 	if s.known == nil {
 		s.known = map[string]bool{}
 	}
+	changed := false
 	for _, e := range evs {
-		if balanserRe.MatchString(e.Balanser) && len(s.known) < 1000 {
-			s.known[e.Balanser] = e.Show && !e.Rch
+		if balanserRe.MatchString(e.Balanser) && len(s.known) < maxKnown {
+			shown := e.Show && !e.Rch
+			if old, have := s.known[e.Balanser]; !have || old != shown {
+				changed = true
+			}
+			s.known[e.Balanser] = shown
 		}
 	}
+	var snap map[string]bool
+	var ver uint64
+	if s.SaveKnown != nil && len(s.known) > 0 && (changed || time.Since(s.kat) > knownRefresh) {
+		s.kver++
+		s.kat = time.Now()
+		ver, snap = s.kver, maps.Clone(s.known)
+	}
 	s.kmu.Unlock()
+	if snap != nil {
+		s.saveKnown(snap, ver)
+	}
 	for _, e := range evs {
 		if !e.Show || e.Rch || !balanserRe.MatchString(e.Balanser) {
 			continue
@@ -789,6 +880,9 @@ type Resolved struct {
 	Qualities []string
 	Quality   string
 	Ctx       RefContext
+	// Took is how long resolving the ref took, as the caller timed it (the
+	// proxy's play-start log line).
+	Took time.Duration
 	// CookieSite is the source's own site (that of its default stream):
 	// its Cookie header goes there only.
 	CookieSite string

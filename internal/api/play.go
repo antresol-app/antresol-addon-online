@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/antresol-app/antresol-addon-online/internal/online"
 	"github.com/antresol-app/antresol/addonkit"
@@ -139,10 +140,12 @@ func (a *API) startPlay(ctx context.Context, u online.User, in playRequest) (sta
 	if h := capHeight(in.Caps.MaxHeight, u.MaxHeight); h > 0 {
 		ctx = online.WithMaxHeight(ctx, h)
 	}
+	began := time.Now()
 	res, err := svc.Resolve(ctx, u, in.Ref, in.Quality, in.Refresh)
 	if err != nil {
 		return started{}, err
 	}
+	res.Took = time.Since(began)
 	var warmSubs func()
 	res.Subtitles, warmSubs = svc.PlaySubtitles(ctx, res)
 	sid, err := svc.Proxy.Open(u.ID, res, in.ReplaceSession)
