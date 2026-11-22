@@ -1005,3 +1005,32 @@ func TestProbeAnswersBeforeThePlaylistIsRead(t *testing.T) {
 		t.Fatalf("read %d bytes", len(pr.root.b))
 	}
 }
+
+// The player gets a master that says it has no closed captions (a source
+// master that says nothing of them makes AVFoundation offer an empty «CC»),
+// and one that has captions is served as it is.
+func TestProxyMasterSaysNoClosedCaptions(t *testing.T) {
+	plain := "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,CODECS=\"avc1.64001e,mp4a.40.2\"\nv/media.m3u8\n"
+	captioned := "#EXTM3U\n#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID=\"cc\",NAME=\"English\",INSTREAM-ID=\"CC1\"\n" +
+		"#EXT-X-STREAM-INF:BANDWIDTH=800000,CLOSED-CAPTIONS=\"cc\"\nv/media.m3u8\n"
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plain.m3u8":
+			w.Write([]byte(plain))
+		case "/captioned.m3u8":
+			w.Write([]byte(captioned))
+		}
+	}))
+	defer cdn.Close()
+	base := "http://cdn.example:" + portOf(cdn)
+	p := &Proxy{Key: proxyKey, HTTP: testNet(t, "lampac.test:9", []string{"cdn.example"}, cdn.Listener.Addr().String())}
+	sid, _ := p.Open(1, Resolved{Kind: "hls", URL: base + "/plain.m3u8"}, "")
+	w := get(p, 1, p.URL(sid, base+"/plain.m3u8", ""))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `CODECS="avc1.64001e,mp4a.40.2",CLOSED-CAPTIONS=NONE`+"\n") {
+		t.Fatalf("plain master: %d\n%s", w.Code, w.Body)
+	}
+	w = get(p, 1, p.URL(sid, base+"/captioned.m3u8", ""))
+	if w.Code != 200 || strings.Contains(w.Body.String(), "NONE") || !strings.Contains(w.Body.String(), `CLOSED-CAPTIONS="cc"`) {
+		t.Fatalf("captioned master: %d\n%s", w.Code, w.Body)
+	}
+}

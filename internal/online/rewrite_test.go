@@ -121,3 +121,93 @@ func TestRewriteDropsOtherSchemes(t *testing.T) {
 		t.Fatalf("http segment lost:\n%s", out)
 	}
 }
+
+// An HLS master that says nothing of closed captions makes AVFoundation
+// offer a «CC» subtitle option that carries nothing (measured: a caption-less
+// master without the attribute gives a legible group with one closedCaption
+// option; with CLOSED-CAPTIONS=NONE there is no group). The proxy says it.
+func TestRewriteDeclaresNoClosedCaptions(t *testing.T) {
+	base, _ := url.Parse("https://cdn.example/v/42/master.m3u8")
+	streamInfs := func(out string) []string {
+		var l []string
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(line, "#EXT-X-STREAM-INF:") {
+				l = append(l, strings.TrimRight(line, "\r"))
+			}
+		}
+		return l
+	}
+	t.Run("a master without captions gets NONE on every variant", func(t *testing.T) {
+		master := string(fixture(t, "master.m3u8"))
+		out := rewriteM3U8(master, base, testSign, "")
+		infs := streamInfs(out)
+		if len(infs) != 2 {
+			t.Fatalf("variants: %v", infs)
+		}
+		for _, l := range infs {
+			if !strings.HasSuffix(l, ",CLOSED-CAPTIONS=NONE") || strings.Count(l, "CLOSED-CAPTIONS") != 1 {
+				t.Fatalf("variant without NONE: %q", l)
+			}
+		}
+		// its other attributes stay
+		if !strings.Contains(infs[0], `BANDWIDTH=5000000,RESOLUTION=1920x1080,AUDIO="aud",SUBTITLES="sub"`) {
+			t.Fatalf("attributes lost: %q", infs[0])
+		}
+		// idempotent: a playlist that says it is left as it is
+		again := rewriteM3U8(out, base, func(abs string) string { return abs }, "")
+		if strings.Count(again, "CLOSED-CAPTIONS=NONE") != 2 {
+			t.Fatalf("said twice:\n%s", again)
+		}
+		// CRLF stays
+		crlf := rewriteM3U8(strings.ReplaceAll(master, "\n", "\r\n"), base, testSign, "")
+		if strings.Contains(strings.ReplaceAll(crlf, "\r\n", ""), "\n") || strings.Contains(crlf, "\r\r") {
+			t.Fatalf("line endings changed:\n%q", crlf)
+		}
+		if got := streamInfs(crlf); len(got) != 2 || !strings.HasSuffix(got[0], ",CLOSED-CAPTIONS=NONE") {
+			t.Fatalf("crlf variants: %q", got)
+		}
+	})
+	left := map[string]string{
+		"a master that has captions": "#EXTM3U\n" +
+			"#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID=\"cc\",NAME=\"English\",INSTREAM-ID=\"CC1\"\n" +
+			"#EXT-X-STREAM-INF:BANDWIDTH=1,CLOSED-CAPTIONS=\"cc\"\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2,CLOSED-CAPTIONS=\"cc\"\nb.m3u8\n",
+		"captions declared in the group only": "#EXTM3U\n" +
+			"#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID=\"cc\",INSTREAM-ID=\"CC1\"\n" +
+			"#EXT-X-STREAM-INF:BANDWIDTH=1\na.m3u8\n",
+		"a master that says NONE": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,CLOSED-CAPTIONS=NONE\na.m3u8\n",
+		// NONE on one variant and a group on another is not valid HLS: not made worse
+		"a master of mixed variants": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,CLOSED-CAPTIONS=\"cc\"\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2\nb.m3u8\n",
+		// a quoted value that only looks like the attribute
+		"a quoted look-alike": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,NAME=\"x,CLOSED-CAPTIONS=NONE\"\na.m3u8\n",
+	}
+	for name, in := range left {
+		t.Run(name, func(t *testing.T) {
+			out := rewriteM3U8(in, base, func(abs string) string { return abs }, "")
+			want := strings.ReplaceAll(in, "a.m3u8", "https://cdn.example/v/42/a.m3u8")
+			want = strings.ReplaceAll(want, "b.m3u8", "https://cdn.example/v/42/b.m3u8")
+			if name == "a quoted look-alike" {
+				// the look-alike is not the attribute: the variant says NONE (once, as its own)
+				if !strings.HasSuffix(strings.Split(out, "\n")[1], `NAME="x,CLOSED-CAPTIONS=NONE",CLOSED-CAPTIONS=NONE`) {
+					t.Fatalf("look-alike taken for the attribute:\n%s", out)
+				}
+				return
+			}
+			if out != want {
+				t.Fatalf("changed:\n%s\nwant\n%s", out, want)
+			}
+		})
+	}
+	t.Run("a media playlist is not touched", func(t *testing.T) {
+		media := string(fixture(t, "media.m3u8"))
+		if out := rewriteM3U8(media, base, func(abs string) string { return abs }, ""); strings.Contains(out, "CLOSED-CAPTIONS") {
+			t.Fatalf("media playlist changed:\n%s", out)
+		}
+	})
+	t.Run("the bounds count what is added", func(t *testing.T) {
+		master := string(fixture(t, "master.m3u8"))
+		_, size := measureM3U8([]byte(master), base, func(_ *url.URL, raw string) (int, bool) { return len(testSign(raw)), true })
+		if out := rewriteM3U8(master, base, testSign, ""); size != len(out) {
+			t.Fatalf("measured %d, written %d", size, len(out))
+		}
+	})
+}

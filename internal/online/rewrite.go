@@ -41,10 +41,92 @@ func resolveURI(base *url.URL, ref string) (*url.URL, string, bool) {
 	return abs, abs.String(), true
 }
 
+// ccNone is what a master playlist says of closed captions when it carries
+// none. Without it AVFoundation cannot know and offers a «CC» subtitle option
+// (a closedCaption legible option) for any master, one that shows nothing.
+const ccNone = "CLOSED-CAPTIONS=NONE"
+
+// eachAttr calls f with each name and value (as written, quotes kept) of the
+// attribute list of an HLS tag; f true stops. Values in quotes may hold
+// commas and "=".
+func eachAttr(tag string, f func(name, value string) bool) {
+	colon := strings.IndexByte(tag, ':')
+	if colon < 0 {
+		return
+	}
+	rest := tag[colon+1:]
+	for len(rest) > 0 {
+		eq := strings.IndexAny(rest, "=,")
+		if eq < 0 {
+			return
+		}
+		if rest[eq] == ',' {
+			rest = rest[eq+1:]
+			continue
+		}
+		name := strings.TrimSpace(rest[:eq])
+		rest = rest[eq+1:]
+		var value string
+		if strings.HasPrefix(rest, `"`) {
+			if end := strings.IndexByte(rest[1:], '"'); end < 0 { // unterminated: the rest is the value
+				value, rest = rest, ""
+			} else {
+				value, rest = rest[:end+2], rest[end+2:]
+			}
+		} else if c := strings.IndexByte(rest, ','); c >= 0 {
+			value, rest = rest[:c], rest[c:]
+		} else {
+			value, rest = rest, ""
+		}
+		if f(name, value) {
+			return
+		}
+		rest = strings.TrimPrefix(rest, ",")
+	}
+}
+
+// sayNoCaptions reports whether body is a master playlist that says nothing
+// of closed captions: it has variants, none with a CLOSED-CAPTIONS attribute
+// and no closed-captions group. HLS wants NONE on every variant or on none, so
+// a master that mentions captions anywhere is left as it is.
+func sayNoCaptions(body []byte) bool {
+	if !bytes.Contains(body, []byte("#EXT-X-STREAM-INF")) {
+		return false
+	}
+	variants := 0
+	for len(body) > 0 {
+		var line []byte
+		if i := bytes.IndexByte(body, '\n'); i < 0 {
+			line, body = body, nil
+		} else {
+			line, body = body[:i], body[i+1:]
+		}
+		tag := string(bytes.TrimRight(line, "\r"))
+		switch {
+		case strings.HasPrefix(tag, "#EXT-X-STREAM-INF:"):
+			variants++
+			said := false
+			eachAttr(tag, func(name, _ string) bool { said = name == "CLOSED-CAPTIONS"; return said })
+			if said {
+				return false
+			}
+		case strings.HasPrefix(tag, "#EXT-X-MEDIA:"):
+			cc := false
+			eachAttr(tag, func(name, value string) bool { cc = name == "TYPE" && value == "CLOSED-CAPTIONS"; return cc })
+			if cc {
+				return false
+			}
+		}
+	}
+	return variants > 0
+}
+
 // rewriteLines goes through the lines of body: tags with URI attributes
 // and URI lines go through f, everything is handed to emit in order
-// (line endings as they were). emit false stops.
+// (line endings as they were); a master playlist that says nothing of closed
+// captions gets CLOSED-CAPTIONS=NONE on its variants. emit false stops.
 func rewriteLines(body []byte, base *url.URL, f uriFunc, emit func(s string) bool) {
+	noCC := sayNoCaptions(body)
 	proxied := func(ref string) (string, bool) {
 		abs, raw, ok := resolveURI(base, ref)
 		if !ok {
@@ -68,6 +150,12 @@ func rewriteLines(body []byte, base *url.URL, f uriFunc, emit func(s string) boo
 			out = string(text)
 		case text[0] == '#':
 			out = rewriteTag(string(text), proxied)
+			if noCC && bytes.HasPrefix(text, []byte("#EXT-X-STREAM-INF:")) {
+				if !strings.HasSuffix(out, ",") {
+					out += ","
+				}
+				out += ccNone
+			}
 		default:
 			out = "#"
 			if p, ok := proxied(string(text)); ok {
@@ -156,7 +244,8 @@ func measureM3U8(body []byte, base *url.URL, sizeOf func(abs *url.URL, raw strin
 // replaced by sign(abs) (a <Proxy.Base>… path), with ?mk= when mk is
 // set (AVPlayer and AirPlay fetch them without the app's headers).
 // Comments, tags, their other attributes and the line endings stay as
-// they are. A URI that is not http(s) is dropped: the line becomes a bare
+// they are, but for the variants of a master that says nothing of closed
+// captions (CLOSED-CAPTIONS=NONE is added). A URI that is not http(s) is dropped: the line becomes a bare
 // "#" (a URI attribute becomes empty).
 func rewriteM3U8(body string, base *url.URL, sign func(abs string) string, mk string) string {
 	q := mkQuery(mk)
