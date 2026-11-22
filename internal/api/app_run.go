@@ -96,10 +96,11 @@ func (s *appSessions) drop(id string, user int64) {
 
 // --- the run ---
 
-// appRun: POST /api/app/run — plays the file a final row's ref names; with
-// «quick» and no ref it goes on from the last choices of this title (source,
-// voice, season and episode, quality) or says {"pick": true}, and the app
-// opens the sheet.
+// appRun: POST /api/app/run — plays the file a final row's ref names (in the
+// call's `quality` when it names one); with «quick» and no ref it goes on from
+// the last choices of this title (source, voice, season and episode, quality)
+// or says {"pick": true}, and the app opens the sheet. The play answer carries
+// `ref`, which plays the same stream again.
 func (a *API) appRun(w http.ResponseWriter, r *http.Request) {
 	in, ref, ok := a.readCall(w, r)
 	if !ok {
@@ -133,6 +134,9 @@ func (a *API) appRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := playRequest{Ref: ref.R, Quality: ref.Q, Refresh: in.Refresh}
+	if in.Quality != "" {
+		req.Quality = in.Quality
+	}
 	req.Caps.MaxHeight = in.MaxHeight
 	if in.StartSec != nil {
 		req.StartSec = max(*in.StartSec, 0)
@@ -148,6 +152,13 @@ func (a *API) appRun(w http.ResponseWriter, r *http.Request) {
 	a.sessions.put(st.sid, appSession{user: u.ID, kind: c.Kind, tmdbID: c.TMDBID, season: c.Season, episode: c.Episode,
 		source: c.Source, voice: c.Voice, quality: st.res.Quality, nextSeason: ref.NS, nextEpisode: ref.NE, last: ref.L})
 	st.body["progress"] = map[string]any{"path": "x/app/progress", "every": progressEvery}
+	// the ref that plays this very stream again (a stale link, another quality
+	// with `quality`): the file, the quality it plays in and the episode after it
+	again := appRef{K: refPlay, R: ref.R, Q: ref.Q, NS: ref.NS, NE: ref.NE, L: ref.L}
+	if q := st.res.Quality; q != "" && len(q) <= maxQualityName {
+		again.Q = q
+	}
+	st.body["ref"] = again.encode()
 	addonkit.WriteJSON(w, http.StatusOK, map[string]any{"play": st.body})
 }
 

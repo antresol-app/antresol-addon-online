@@ -199,6 +199,9 @@ type appRef struct {
 // maxAppRef bounds a ref (online's own are at most 8 KiB).
 const maxAppRef = 16 << 10
 
+// maxQualityName bounds a quality's name in a ref or a run.
+const maxQualityName = 100
+
 func (a appRef) encode() string {
 	b, _ := json.Marshal(a)
 	return base64.RawURLEncoding.EncodeToString(b)
@@ -217,7 +220,7 @@ func parseRef(s string) (*appRef, bool) {
 		return nil, false
 	}
 	var ref appRef
-	if json.Unmarshal(b, &ref) != nil || ref.R == "" || len(ref.Q) > 100 || len(ref.Qs) > 20 || ref.NS < 0 || ref.NE < 0 {
+	if json.Unmarshal(b, &ref) != nil || ref.R == "" || len(ref.Q) > maxQualityName || len(ref.Qs) > 20 || ref.NS < 0 || ref.NE < 0 {
 		return nil, false
 	}
 	switch ref.K {
@@ -226,7 +229,7 @@ func parseRef(s string) (*appRef, bool) {
 		return nil, false
 	}
 	for _, q := range ref.Qs {
-		if len(q) > 100 {
+		if len(q) > maxQualityName {
 			return nil, false
 		}
 	}
@@ -247,6 +250,10 @@ type appCall struct {
 	MaxHeight int      `json:"maxHeight"`
 	Quick     bool     `json:"quick"`
 	Refresh   bool     `json:"refresh"`
+	// Quality is a quality of the play answer's options: a run of a play
+	// ref plays it in that quality (over the ref's own), so a player
+	// restarts a stream in another quality from the ref the answer gave.
+	Quality string `json:"quality"`
 }
 
 // readCall reads and checks a step or run body; false: the answer is
@@ -268,7 +275,7 @@ func (a *API) readCall(w http.ResponseWriter, r *http.Request) (appCall, *appRef
 		in.Season, in.Episode = 0, 0
 	}
 	ref, ok := parseRef(in.Ref)
-	if !ok {
+	if !ok || len(in.Quality) > maxQualityName {
 		writeErr(w, r, http.StatusBadRequest, msgBadRequest)
 		return in, nil, false
 	}

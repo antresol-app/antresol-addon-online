@@ -183,6 +183,7 @@ type runAnswer struct {
 	Pick bool
 	Play *struct {
 		Mode, Kind, URL, Session string
+		Ref                      string
 		StartSec                 float64
 		Quality                  struct {
 			Options []string
@@ -562,6 +563,87 @@ func TestApp_Run_Quick(t *testing.T) {
 	// the cap of «Авто» reaches the resolve (the remembered quality still wins)
 	if a, w := e.run(t, call("movie", 438631, "", `,"quick":true,"maxHeight":720`), admin); w.Code != 200 || a.Play == nil {
 		t.Fatalf("capped: %d %s", w.Code, w.Body)
+	}
+}
+
+// The play answer carries a ref that plays the same stream again: the file, the
+// quality it plays in and the episode listed after it. With `quality` the run plays
+// that one of the answer's options instead, which is how a player switches the quality;
+// without it the ref's own quality plays. A quick run's answer has one too (the
+// call that had no ref to send again).
+func TestApp_Run_AnswerRef(t *testing.T) {
+	e := newAppEnv(t)
+	src := e.step(t, call("movie", 438631, "", ""))
+	files := e.step(t, call("movie", 438631, src.Rows[0].Ref, ""))
+	quality := e.step(t, call("movie", 438631, files.Rows[0].Ref, ""))
+	asked, _ := parseRef(quality.Rows[1].Ref) // 720p
+	first, w := e.run(t, call("movie", 438631, quality.Rows[1].Ref, ""), admin)
+	if w.Code != 200 || first.Play == nil || first.Play.Ref == "" {
+		t.Fatalf("play: %d %s", w.Code, w.Body)
+	}
+	again, ok := parseRef(first.Play.Ref)
+	if !ok || again == nil || again.K != refPlay || again.R != asked.R || again.Q != "720p" {
+		t.Fatalf("the answer's ref: %+v %v", again, ok)
+	}
+	// the ref alone plays the same stream (a new session; the link went stale)
+	same, w := e.run(t, call("movie", 438631, first.Play.Ref, `,"refresh":true`), admin)
+	if w.Code != 200 || same.Play == nil || same.Play.Quality.Current != "720p" || same.Play.Session == first.Play.Session {
+		t.Fatalf("same again: %d %s", w.Code, w.Body)
+	}
+	// another of the answer's options, from the ref the answer gave
+	other, w := e.run(t, call("movie", 438631, first.Play.Ref, `,"quality":"1080p","startSec":42`), admin)
+	if w.Code != 200 || other.Play == nil || other.Play.Quality.Current != "1080p" || other.Play.StartSec != 42 {
+		t.Fatalf("another quality: %d %s", w.Code, w.Body)
+	}
+	if got, _ := parseRef(other.Play.Ref); got == nil || got.R != asked.R || got.Q != "1080p" {
+		t.Fatalf("the new ref: %+v", got)
+	}
+	// a quality the file does not have falls back to what the server would pick, and the ref says what plays
+	odd, w := e.run(t, call("movie", 438631, first.Play.Ref, `,"quality":"8K"`), admin)
+	if w.Code != 200 || odd.Play == nil || odd.Play.Quality.Current == "8K" {
+		t.Fatalf("an unknown quality: %d %s", w.Code, w.Body)
+	}
+	if got, _ := parseRef(odd.Play.Ref); got == nil || got.Q != odd.Play.Quality.Current {
+		t.Fatalf("its ref: %+v vs %q", got, odd.Play.Quality.Current)
+	}
+	// a name of a sane length only
+	if w := e.post("/run", call("movie", 438631, first.Play.Ref, `,"quality":"`+strings.Repeat("q", maxQualityName+1)+`"`), admin); w.Code != 400 {
+		t.Fatalf("a long quality: %d %s", w.Code, w.Body)
+	}
+	// a quick run's answer: its ref plays on without «quick»
+	e.putApp(t, admin, first.Play.Session, `"positionMs":30000,"durationMs":100000`)
+	quick, w := e.run(t, call("movie", 438631, "", `,"quick":true`), admin)
+	if w.Code != 200 || quick.Play == nil || quick.Play.Ref == "" {
+		t.Fatalf("quick: %d %s", w.Code, w.Body)
+	}
+	if a, w := e.run(t, call("movie", 438631, quick.Play.Ref, `,"refresh":true`), admin); w.Code != 200 || a.Play == nil || a.Play.Quality.Current != quick.Play.Quality.Current {
+		t.Fatalf("a quick run again from its ref: %d %s", w.Code, w.Body)
+	}
+}
+
+// The ref of an episode's answer keeps the episode listed after it, so the
+// position of the restarted stream is recorded with its «next» as before.
+func TestApp_Run_AnswerRefKeepsTheNextEpisode(t *testing.T) {
+	e := newAppEnv(t)
+	src := e.step(t, call("series", 1396, "", ""))
+	voices := e.step(t, call("series", 1396, src.Rows[0].Ref, ""))
+	seasons := e.step(t, call("series", 1396, voices.Rows[0].Ref, ""))
+	eps := e.step(t, call("series", 1396, seasons.Rows[0].Ref, ""))
+	ref := eps.Rows[0].Ref
+	if !eps.Rows[0].Final {
+		ref = e.step(t, call("series", 1396, ref, "")).Rows[1].Ref
+	}
+	listed, _ := parseRef(ref)
+	if listed == nil || (listed.NS == 0 && listed.NE == 0) {
+		t.Fatalf("the row's ref names no next episode: %+v", listed)
+	}
+	a, w := e.run(t, call("series", 1396, ref, ""), admin)
+	if w.Code != 200 || a.Play == nil {
+		t.Fatalf("play: %d %s", w.Code, w.Body)
+	}
+	got, _ := parseRef(a.Play.Ref)
+	if got == nil || got.NS != listed.NS || got.NE != listed.NE || got.L != listed.L {
+		t.Fatalf("answer's ref %+v, row's %+v", got, listed)
 	}
 }
 
