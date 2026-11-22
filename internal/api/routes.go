@@ -19,6 +19,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/antresol-app/antresol-addon-online/internal/corecopy/i18n"
 	"github.com/antresol-app/antresol-addon-online/internal/online"
@@ -63,6 +64,9 @@ type Deps struct {
 	Helper func() addonkit.HelperStatus
 	// Lampac is «Настройки»'s Lampac part (nil: its routes are 404).
 	Lampac LampacSettings
+	// OfferWait is how long the app's source step waits for what the
+	// sources offer, for their rows' badges (0: 2.5 s).
+	OfferWait time.Duration
 }
 
 // API is the mounted routes.
@@ -116,10 +120,13 @@ func Register(mux *http.ServeMux, d Deps) *API {
 	return a
 }
 
-// Wait waits for the poster fetches in flight (tests, shutdown).
+// Wait waits for the poster fetches and the sources' lookups in flight (tests, shutdown).
 func (a *API) Wait() {
 	if a.posters != nil {
 		a.posters.wg.Wait()
+	}
+	if a.d.Online != nil {
+		a.d.Online.WaitOffers()
 	}
 }
 

@@ -17,7 +17,10 @@ package api
 //
 // A row's ref is opaque to the app: it carries the signed ref of the level
 // or file it leads to, so every call stands alone. The labels are in the
-// profile's language.
+// profile's language. A source row says what the source offers (its
+// voice-overs as the second line, its quality and subtitles as badges), as the
+// web sheet's rows do, for the sources the step could look up in its short
+// budget.
 
 import (
 	"context"
@@ -28,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/antresol-app/antresol-addon-online/internal/corecopy/i18n"
 	"github.com/antresol-app/antresol-addon-online/internal/corecopy/metadata/tmdb"
@@ -388,12 +392,56 @@ func (a *API) sourceStep(ctx context.Context, r *http.Request, u online.User, in
 	if err != nil {
 		return appStep{}, err
 	}
+	offers := a.d.Online.Offers(ctx, u, in.Kind, in.TMDBID, srcs, a.offerWait())
 	rows := make([]appRow, 0, len(srcs))
 	for _, s := range srcs {
-		rows = append(rows, appRow{Ref: appRef{K: refBrowse, R: s.Ref}.encode(), Label: s.Name, Detail: s.Quality,
-			Current: mem.last.Source != "" && s.ID == mem.last.Source})
+		row := appRow{Ref: appRef{K: refBrowse, R: s.Ref}.encode(), Label: s.Name, Detail: s.Quality,
+			Current: mem.last.Source != "" && s.ID == mem.last.Source}
+		if o, ok := offers[s.ID]; ok {
+			row.Detail, row.Badges = offerLines(r, s.Quality, o)
+		}
+		rows = append(rows, row)
 	}
 	return appStep{Title: tr(r, "Источник"), Rows: rows, Empty: tr(r, msgNoSources)}, nil
+}
+
+// defaultOfferWait is how long a source step waits for the sources' offers
+// (Deps.OfferWait): the step answers in about that time, with what is ready.
+const defaultOfferWait = 2500 * time.Millisecond
+
+func (a *API) offerWait() time.Duration {
+	if a.d.OfferWait > 0 {
+		return a.d.OfferWait
+	}
+	return defaultOfferWait
+}
+
+// maxListed is how many names a line lists before «+N» (the web sheet's
+// badges: three voice-overs, three subtitle languages).
+const maxListed = 3
+
+// listed is xs's first maxListed joined by sep, then «+N» for the rest.
+func listed(xs []string, sep string) string {
+	if len(xs) <= maxListed {
+		return strings.Join(xs, sep)
+	}
+	return strings.Join(xs[:maxListed], sep) + " +" + strconv.Itoa(len(xs)-maxListed)
+}
+
+// offerLines are the second line and the badges of a source's row: its
+// voice-overs, then its quality (that of its name, else the best its files
+// name) and its subtitles.
+func offerLines(r *http.Request, quality string, o online.Offer) (detail string, badges []string) {
+	if quality == "" {
+		quality = o.Quality
+	}
+	if quality != "" {
+		badges = append(badges, quality)
+	}
+	if o.Subs {
+		badges = append(badges, subsBadge(r, o.SubLangs))
+	}
+	return listed(o.Voices, ", "), badges
 }
 
 // browseStep opens the level ref points to and lists its choice: the
@@ -523,12 +571,7 @@ func fileStep(r *http.Request, lv online.Level, mem memory) appStep {
 }
 
 // fileVoice is the voice-over a film file plays in.
-func fileVoice(f online.File) string {
-	if f.Voice != "" {
-		return f.Voice
-	}
-	return f.Name
-}
+func fileVoice(f online.File) string { return online.FileVoice(f) }
 
 // itemRow is a file or episode as a row: its qualities as the second line,
 // its subtitles as a badge. One quality (or none) is played at once; several
@@ -536,7 +579,7 @@ func fileVoice(f online.File) string {
 func itemRow(r *http.Request, ref appRef, label string, qualities []string, subs int, tracks []online.SubInfo, current bool) appRow {
 	row := appRow{Label: label, Detail: strings.Join(qualities, " · "), Current: current, Final: len(qualities) <= 1}
 	if subs > 0 {
-		row.Badges = []string{subsBadge(r, tracks)}
+		row.Badges = []string{subsBadge(r, online.SubLangsOf(tracks))}
 	}
 	if !row.Final {
 		ref.K, ref.Qs = refFile, qualities
@@ -545,22 +588,13 @@ func itemRow(r *http.Request, ref appRef, label string, qualities []string, subs
 	return row
 }
 
-// subsBadge is «Субтитры: RU, EN» («Субтитры» when no track names its
-// language).
-func subsBadge(r *http.Request, tracks []online.SubInfo) string {
-	var langs []string
-	seen := map[string]bool{}
-	for _, t := range tracks {
-		l := strings.ToUpper(strings.TrimSpace(t.Lang))
-		if l != "" && !seen[l] {
-			seen[l] = true
-			langs = append(langs, l)
-		}
-	}
+// subsBadge is «Субтитры: RU, EN» (three languages at most, then «+N»;
+// «Субтитры» when no track names its language).
+func subsBadge(r *http.Request, langs []string) string {
 	if len(langs) == 0 {
 		return tr(r, "Субтитры")
 	}
-	return tr(r, "Субтитры: %s", strings.Join(langs, ", "))
+	return tr(r, "Субтитры: %s", listed(langs, ", "))
 }
 
 func qualityStep(r *http.Request, ref appRef, mem memory) appStep {

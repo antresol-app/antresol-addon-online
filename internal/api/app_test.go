@@ -380,6 +380,11 @@ func TestApp_Step_Film(t *testing.T) {
 	if src.Title != "Источник" || len(src.Rows) != 1 || src.Rows[0].Label != "alpha" || src.Rows[0].Final || src.Rows[0].Current || src.Empty == "" {
 		t.Fatalf("sources: %+v", src)
 	}
+	// the row says what the source offers: its voice-overs (the DASH-only file
+	// is not one), its best quality and its subtitles
+	if r := src.Rows[0]; r.Detail != "Дубляж, Многоголосый" || strings.Join(r.Badges, "|") != "1080p|Субтитры: RU" {
+		t.Fatalf("the source's offer: %+v", r)
+	}
 	files := e.step(t, call("movie", 438631, src.Rows[0].Ref, ""))
 	// the DASH-only file is not offered; the call entry has no qualities named
 	if files.Title != "Озвучка" || labels(files) != "Дубляж|Многоголосый" {
@@ -468,7 +473,9 @@ func (e *appEnv) saved(t *testing.T, u *addonkit.User, kind string, id int) stru
 func TestApp_Step_Series(t *testing.T) {
 	e := newAppEnv(t)
 	src := e.step(t, call("series", 1396, "", ""))
-	if labels(src) != "beta|delta" || src.Rows[0].Detail != "720p" {
+	// beta says what it offers; delta fails (its row stays as it was)
+	if labels(src) != "beta|delta" || src.Rows[0].Detail != "Дубляж, Многоголосый" ||
+		strings.Join(src.Rows[0].Badges, "|") != "720p|Субтитры: RU, EN" || src.Rows[1].Detail != "" || src.Rows[1].Badges != nil {
 		t.Fatalf("sources: %+v", src)
 	}
 	voices := e.step(t, call("series", 1396, src.Rows[0].Ref, ""))

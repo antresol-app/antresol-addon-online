@@ -116,6 +116,14 @@ type Service struct {
 
 	sf singleflight.Group // one Lampac request per level or call at a time
 
+	// the lookups of Offers: sources whose offer could not be read lately,
+	// the (profile, title) pairs whose lookups go on in the background, and
+	// those lookups (offers.go)
+	offerMiss *ttlCache[offerKey, struct{}]
+	omu       sync.Mutex
+	draining  map[drainKey]bool
+	offerWG   sync.WaitGroup
+
 	kmu   sync.Mutex
 	known map[string]bool // balancer → listed shown and non-rch by the last events naming it
 	kver  uint64          // known's revision, for the saves (under kmu)
@@ -156,6 +164,7 @@ func (s *Service) init() {
 		s.events = newTTLCache[titleKey, []Source](500, eventsTTL)
 		s.levels = newTTLCache[string, []byte](2000, 5*time.Minute)
 		s.calls = newTTLCache[string, []byte](500, 2*time.Minute)
+		s.offerMiss = newTTLCache[offerKey, struct{}](2000, offerMissTTL)
 		c := s.Upstream
 		if c == nil {
 			c = upstreamFor(s.L)
