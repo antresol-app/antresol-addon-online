@@ -45,6 +45,26 @@ func TestEpisodeSubtitleTracks(t *testing.T) {
 	}
 }
 
+// A label that names no language (Kinobase's player: «[1]…/rus.vtt») takes
+// it from the file name; a name with no language tag still has none, and a
+// label's language wins over the URL's.
+func TestSubtitleTrackLangFromURL(t *testing.T) {
+	got := subInfos([]Sub{
+		{Label: "1", URL: "https://cdn.example/subs/rus.vtt"},
+		{Label: "Субтитры", URL: "https://cdn.example/s/Film.2025.en.srt?t=1"},
+		{Label: "", URL: "https://cdn.example/s/123_ukr.vtt"},
+		{Label: "2", URL: "https://cdn.example/s/a1b2c3.vtt"},
+		{Label: "English", URL: "https://cdn.example/s/ru.vtt"},
+	})
+	want := []SubInfo{{Label: "1", Lang: "ru"}, {Label: "Субтитры", Lang: "en"}, {Label: "", Lang: "uk"}, {Label: "2"}, {Label: "English", Lang: "en"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	if langs := SubLangsOf(got); !reflect.DeepEqual(langs, []string{"RU", "EN", "UK"}) {
+		t.Fatalf("langs %v", langs)
+	}
+}
+
 // A file whose subtitles are behind a subtitles_call gets them at play:
 // the call is asked beside the probes, through Lampac, once (cached); a
 // failing or slow one plays without them.

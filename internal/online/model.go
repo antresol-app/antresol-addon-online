@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"golang.org/x/net/http/httpguts"
+
+	"github.com/antresol-app/antresol-addon-online/internal/corecopy/subtitles"
 )
 
 // The Lampac answers (?rjson=true), as far as Vault reads them.
@@ -196,13 +198,44 @@ type SubInfo struct {
 	Lang  string `json:"lang"`
 }
 
-// subInfos are the labels and languages of subs (nil: none).
+// subInfos are the labels and languages of subs (nil: none). A label
+// that names no language («1», «Субтитры») leaves it to the file name
+// («…/rus.vtt», «film.en.srt»): some sources (Kinobase's player) only say
+// it there, and the picker's badge would read «Субтитры» with no language.
 func subInfos(subs []Sub) []SubInfo {
 	var out []SubInfo
 	for _, s := range subs {
-		out = append(out, SubInfo{Label: s.Label, Lang: labelLang(s.Label)})
+		lang := labelLang(s.Label)
+		if lang == "" {
+			lang = urlLang(s.URL)
+		}
+		out = append(out, SubInfo{Label: s.Label, Lang: lang})
 	}
 	return out
+}
+
+// urlLang is the language a subtitle URL's file name names («ru.vtt»,
+// «film.en.srt», «12_rus.vtt»), its last such part winning; else "". Only
+// known language tags count, so a hash or a number names none.
+func urlLang(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	name := u.Path
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		name = name[i+1:]
+	}
+	if i := strings.LastIndexByte(name, '.'); i > 0 {
+		name = name[:i]
+	}
+	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '.' || r == '_' || r == '-' || r == ' ' })
+	for i := len(parts) - 1; i >= 0; i-- {
+		if l := subtitles.NormLang(parts[i]); l != "" {
+			return l
+		}
+	}
+	return ""
 }
 
 // File is a playable film entry (usually one per voice-over).
