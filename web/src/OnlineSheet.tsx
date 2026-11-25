@@ -5,7 +5,7 @@
 // not a list. «Смотреть» opens the online player
 // (/addons/online/play/:kind/:tmdbId) with what it needs to play, resume and
 // go on to the next episode.
-import { ApiError, Chip, Chips, langBadge, languageName, ui, useUser } from '@antresol/addon-sdk'
+import { ApiError, langBadge, languageName, ui, useUser } from '@antresol/addon-sdk'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { onlineBrowse, onlineProgress, onlineSources } from './api'
@@ -14,7 +14,7 @@ import styles from './OnlineSheet.module.css'
 import { tr, useT } from './i18n'
 import type { OnlineChoice, OnlineEntry, OnlineEpisode, OnlineFile, OnlineLevel, OnlineProgress, OnlineSource } from './types'
 
-const { Badges, Button, Sheet, Spinner } = ui
+const { Badges, Button, Chips, Sheet, Spinner } = ui
 
 /** Where the full-window player is (the route `play/:kind/:tmdbId` of the addon). */
 export const playPath = (kind: string, tmdbId: number) => `/addons/online/play/${kind}/${tmdbId}`
@@ -692,13 +692,7 @@ function Choices({
     return (
       <section className={styles.step}>
         <h3 className={styles.stepTitle}>{label}</h3>
-        <Chips role="radiogroup" aria-label={label}>
-          {options.map((o, i) => (
-            <Chip key={o.key} on={o.key === value} {...radio(o, i)}>
-              {o.label}
-            </Chip>
-          ))}
-        </Chips>
+        <Chips label={label} chips={options.map((o) => ({ value: o.key, label: o.label }))} value={value} onChange={onChange} />
       </section>
     )
   }
