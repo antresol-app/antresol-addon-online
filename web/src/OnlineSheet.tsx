@@ -14,7 +14,7 @@ import styles from './OnlineSheet.module.css'
 import { tr, useT } from './i18n'
 import type { OnlineChoice, OnlineEntry, OnlineEpisode, OnlineFile, OnlineLevel, OnlineProgress, OnlineSource } from './types'
 
-const { Badges, Button, Sheet } = ui
+const { Badges, Button, Sheet, Spinner } = ui
 
 /** Where the full-window player is (the route `play/:kind/:tmdbId` of the addon). */
 export const playPath = (kind: string, tmdbId: number) => `/addons/online/play/${kind}/${tmdbId}`
@@ -482,7 +482,7 @@ export function OnlineSheet({ kind, tmdbId, title, poster, onClose, replace, pla
   if (load.status === 'loading') {
     body = (
       <div className={styles.searching} role="status">
-        <span className={styles.spinner} aria-hidden />
+        <Spinner track className={styles.spinner} />
         <span>{t('online.searching')}</span>
         <span className={styles.bar} aria-hidden>
           <span />
@@ -523,7 +523,7 @@ export function OnlineSheet({ kind, tmdbId, title, poster, onClose, replace, pla
         )}
         {browse.status === 'loading' && (
           <div className={styles.searching} role="status">
-            <span className={styles.spinner} aria-hidden />
+            <Spinner track className={styles.spinner} />
             <span className="visually-hidden">{t('common.loading')}</span>
           </div>
         )}

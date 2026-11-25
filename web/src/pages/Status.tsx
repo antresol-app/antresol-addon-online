@@ -10,7 +10,7 @@ import { setTitle } from '../title'
 import type { OnlineStatus } from '../types'
 import m from './Manage.module.css'
 
-const { Button, GroupedSection, ListRow } = ui
+const { Button, GroupedSection, ListRow, Spinner } = ui
 
 export function Status() {
   const t = useT()
@@ -61,7 +61,7 @@ export function Status() {
       )}
       {!status && !error && (
         <div className={m.spinnerRow} role="status">
-          <span className={m.spinner} aria-hidden /> {t('common.loading')}
+          <Spinner track className={m.spinner} /> {t('common.loading')}
         </div>
       )}
       {status && (

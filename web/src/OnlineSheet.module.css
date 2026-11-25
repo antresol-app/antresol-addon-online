@@ -16,24 +16,17 @@
   color: var(--label-2);
   font: var(--t-subhead);
 }
+/* ui/Spinner's ring, a little bigger and thicker */
 .spinner {
-  width: 22px;
-  height: 22px;
-  border: 2.5px solid var(--fill-1);
-  border-top-color: var(--label);
-  border-radius: 50%;
-  animation: spin 0.9s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  --spinner-size: 22px;
+  --spinner-width: 2.5px;
+  color: var(--label);
 }
 /* the server asks every source for up to 15 s: the bar fills over that time */
 .bar {
   width: min(240px, 60%);
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: var(--fill-3);
   overflow: hidden;
 }
@@ -41,7 +34,7 @@
   display: block;
   height: 100%;
   width: 0;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: var(--label-2);
   animation: fill 15s var(--ease-out) forwards;
 }
@@ -51,9 +44,6 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation-duration: 2.4s;
-  }
   .bar > span {
     animation: none;
     width: 50%;
@@ -96,7 +86,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--s-3);
-  min-height: 44px;
+  min-height: var(--control-h-md);
   padding: var(--s-2) var(--s-1);
   border-bottom: 1px solid var(--separator);
 }
@@ -130,7 +120,7 @@
   grid-template-areas: 'text check' 'resume resume';
   align-items: center;
   column-gap: var(--s-3);
-  min-height: 44px;
+  min-height: var(--control-h-md);
   padding: var(--s-2) var(--s-3);
   border: 0;
   border-bottom: 1px solid var(--separator);
@@ -155,7 +145,7 @@
 }
 /* the menu rows' type (Popover items) */
 .rowOn .rowLabel {
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .rowText {
   grid-area: text;
@@ -191,14 +181,14 @@
   grid-area: resume;
   height: 3px;
   margin-top: var(--s-2);
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: var(--fill-2);
   overflow: hidden;
 }
 .resume > span {
   display: block;
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: var(--label);
 }
 

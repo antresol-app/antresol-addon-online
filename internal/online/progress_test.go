@@ -3,6 +3,7 @@ package online
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -425,5 +426,76 @@ func TestOnlineProgressSeedRespectsUnwatched(t *testing.T) {
 	}
 	if p, ok := e.local(movie); !ok || p.PositionMs != 10_000 {
 		t.Fatalf("new save: %+v %v", p, ok)
+	}
+}
+
+type countLib struct {
+	LibraryLookup
+	episodes atomic.Int32
+}
+
+func (c *countLib) EpisodeItems(ctx context.Context, userID, tmdbID int64) ([]addonkit.EpisodeItem, error) {
+	c.episodes.Add(1)
+	return c.LibraryLookup.EpisodeItems(ctx, userID, tmdbID)
+}
+
+type countProgress struct {
+	LibraryProgress
+	saves atomic.Int32
+}
+
+func (c *countProgress) SaveProgress(ctx context.Context, p addonkit.ProgressSave) error {
+	c.saves.Add(1)
+	return c.LibraryProgress.SaveProgress(ctx, p)
+}
+
+// The player saves every 10 s: the library's episodes of the series are
+// listed once for a while, and a save close to the last mirrored position
+// is not mirrored again (the online position is stored all the same); a
+// move of mirrorEvery or more, a seek back and a finish are.
+func TestOnlineProgressMirrorIsThrottled(t *testing.T) {
+	e := newProgressEnv(t)
+	ctx := context.Background()
+	lib, prog := &countLib{LibraryLookup: e.core}, &countProgress{LibraryProgress: e.core}
+	e.ps.Lib, e.ps.Progress = lib, prog
+	ep := e.core.AddEpisode(1396, 1, 1)
+	save := func(pos int64, finished bool) {
+		t.Helper()
+		e.tick()
+		if err := e.ps.Save(ctx, e.u, Entry{Kind: "series", TMDBID: 1396, Season: 1, Episode: 1, PositionMs: pos, DurationMs: 3_000_000, Finished: finished}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, c := range []struct {
+		pos      int64
+		finished bool
+		mirrored bool
+	}{
+		{100_000, false, true},  // the first
+		{110_000, false, false}, // 10 s on
+		{125_000, false, false}, // 25 s on
+		{131_000, false, true},  // 31 s from the mirrored one
+		{20_000, false, true},   // a seek back
+		{2_900_000, true, true}, // the end
+	} {
+		before := prog.saves.Load()
+		save(c.pos, c.finished)
+		if got := prog.saves.Load() > before; got != c.mirrored {
+			t.Fatalf("save %d at %d ms: mirrored %v, want %v", i, c.pos, got, c.mirrored)
+		}
+		var stored, inLib int64 // the online row follows every save, mirrored or not, and stays the library's
+		e.ps.DB.QueryRow(`SELECT position_ms, in_library FROM online_progress WHERE user_uid=? AND kind='series' AND tmdb_id=1396`, e.u.UID).Scan(&stored, &inLib)
+		if stored != c.pos || inLib != 1 {
+			t.Fatalf("save %d: stored position %d (want %d), in_library %d (want 1)", i, stored, c.pos, inLib)
+		}
+	}
+	if n := lib.episodes.Load(); n != 1 {
+		t.Fatalf("the library's episodes listed %d times by 6 saves, want 1", n)
+	}
+	if got, _, _ := e.ps.Get(ctx, e.u, "series", 1396); len(got) != 1 || got[0].PositionMs != 2_900_000 {
+		t.Fatalf("the online position is not stored: %+v", got)
+	}
+	if p, ok := e.local(ep); !ok || p.PositionMs != 2_900_000 {
+		t.Fatalf("library progress %+v %v", p, ok)
 	}
 }

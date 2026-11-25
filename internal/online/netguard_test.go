@@ -123,9 +123,6 @@ func TestGuardRedirectRules(t *testing.T) {
 	if _, err := c.Get(base + "/ftp"); err == nil {
 		t.Fatal("ftp redirect followed")
 	}
-	if !blockedAddr("192.168.1.1") || blockedAddr("93.184.216.34") {
-		t.Fatal("blockedAddr")
-	}
 }
 
 func TestRedirectSendsNoUpstreamReferer(t *testing.T) {

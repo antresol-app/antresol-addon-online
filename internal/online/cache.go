@@ -7,24 +7,36 @@ import (
 	"time"
 )
 
-// ttlCache is a size-capped LRU whose entries expire after ttl.
+// ttlCache is a size-capped LRU whose entries expire after ttl. With a
+// byte budget (limitBytes) it also drops the oldest entries while their
+// values together are over it.
 type ttlCache[K comparable, V any] struct {
-	mu  sync.Mutex
-	max int
-	ttl time.Duration
-	now func() time.Time
-	ll  *list.List
-	m   map[K]*list.Element
+	mu       sync.Mutex
+	max      int
+	ttl      time.Duration
+	now      func() time.Time
+	ll       *list.List
+	m        map[K]*list.Element
+	size     func(V) int // the budget's measure (nil: no budget)
+	maxBytes int
+	bytes    int
 }
 
 type cacheEntry[K comparable, V any] struct {
 	k   K
 	v   V
+	n   int // size(v)
 	exp time.Time
 }
 
 func newTTLCache[K comparable, V any](max int, ttl time.Duration) *ttlCache[K, V] {
 	return &ttlCache[K, V]{max: max, ttl: ttl, now: time.Now, ll: list.New(), m: map[K]*list.Element{}}
+}
+
+// limitBytes caps the values kept at maxBytes together, as size measures
+// them (call before the first put).
+func (c *ttlCache[K, V]) limitBytes(maxBytes int, size func(V) int) {
+	c.size, c.maxBytes = size, maxBytes
 }
 
 type bypassKey struct{}
@@ -48,8 +60,7 @@ func (c *ttlCache[K, V]) get(ctx context.Context, k K) (V, bool) {
 	}
 	ent := e.Value.(*cacheEntry[K, V])
 	if !c.now().Before(ent.exp) {
-		c.ll.Remove(e)
-		delete(c.m, k)
+		c.remove(e)
 		return zero, false
 	}
 	c.ll.MoveToFront(e)
@@ -62,17 +73,24 @@ func (c *ttlCache[K, V]) put(k K, v V) { c.putFor(k, v, c.ttl) }
 func (c *ttlCache[K, V]) putFor(k K, v V, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	exp := c.now().Add(ttl)
+	n := 0
+	if c.size != nil {
+		n = c.size(v)
+	}
 	if e, ok := c.m[k]; ok {
-		ent := e.Value.(*cacheEntry[K, V])
-		ent.v, ent.exp = v, exp
-		c.ll.MoveToFront(e)
-		return
+		c.remove(e) // as new: its size may differ
 	}
-	c.m[k] = c.ll.PushFront(&cacheEntry[K, V]{k: k, v: v, exp: exp})
-	for c.ll.Len() > c.max {
-		last := c.ll.Back()
-		c.ll.Remove(last)
-		delete(c.m, last.Value.(*cacheEntry[K, V]).k)
+	c.m[k] = c.ll.PushFront(&cacheEntry[K, V]{k: k, v: v, n: n, exp: c.now().Add(ttl)})
+	c.bytes += n
+	for c.ll.Len() > c.max || (c.size != nil && c.bytes > c.maxBytes && c.ll.Len() > 1) {
+		c.remove(c.ll.Back())
 	}
+}
+
+// remove drops e (c.mu held).
+func (c *ttlCache[K, V]) remove(e *list.Element) {
+	ent := e.Value.(*cacheEntry[K, V])
+	c.ll.Remove(e)
+	delete(c.m, ent.k)
+	c.bytes -= ent.n
 }

@@ -15,7 +15,7 @@ import type { OnlineStatus } from '../types'
 import { LampacConnection, LampacSources } from './LampacSettings'
 import m from './Manage.module.css'
 
-const { GroupedSection, ListLinkRow, ListRow, Toggle } = ui
+const { GroupedSection, ListLinkRow, ListRow, Spinner, Toggle } = ui
 
 /** The documentation's three-step guide to connecting Lampac (running it, the address and sign-in, the check), in the page's language. */
 export const lampacDocs = () =>
@@ -90,12 +90,12 @@ export function Settings() {
       <section>
         <h2 className={m.title}>{t('settings.title')}</h2>
         {error ? (
-          <div className={m.problem} role="alert" style={{ marginTop: 16 }}>
+          <div className={`${m.problem} ${m.afterTitle}`} role="alert">
             {error}
           </div>
         ) : (
           <div className={m.spinnerRow} role="status">
-            <span className={m.spinner} aria-hidden /> {t('common.loading')}
+            <Spinner track className={m.spinner} /> {t('common.loading')}
           </div>
         )}
       </section>

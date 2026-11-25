@@ -3,6 +3,8 @@ package online
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/http"
@@ -285,6 +287,57 @@ func TestCacheTTLAndLRU(t *testing.T) {
 	now = now.Add(2 * time.Minute)
 	if _, ok := c.get(ctx, "a"); ok {
 		t.Fatal("expired entry served")
+	}
+}
+
+// A byte budget drops the oldest values while all together are over it;
+// replacing a value counts its new size.
+func TestCacheByteBudget(t *testing.T) {
+	c := newTTLCache[string, []byte](10, time.Minute)
+	c.limitBytes(10, func(b []byte) int { return len(b) })
+	ctx := context.Background()
+	c.put("a", make([]byte, 4))
+	c.put("b", make([]byte, 4))
+	c.put("c", make([]byte, 4)) // 12 > 10: a goes
+	if _, ok := c.get(ctx, "a"); ok {
+		t.Fatal("a kept over the budget")
+	}
+	if _, ok := c.get(ctx, "b"); !ok || c.bytes != 8 {
+		t.Fatalf("b dropped or bytes %d", c.bytes)
+	}
+	c.put("b", make([]byte, 1))
+	if c.bytes != 5 {
+		t.Fatalf("bytes after a replace: %d", c.bytes)
+	}
+	c.put("d", make([]byte, 20)) // alone over the budget: kept, nothing else is
+	if c.ll.Len() != 1 || c.bytes != 20 {
+		t.Fatalf("len %d bytes %d", c.ll.Len(), c.bytes)
+	}
+}
+
+// A call answer over maxCachedLevel is passed on but not kept.
+func TestCallAnswerTooBigIsNotCached(t *testing.T) {
+	l := fakeLampac(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/big") {
+			fmt.Fprintf(w, `{"url":"https://cdn.test/%s.m3u8"}`, strings.Repeat("x", maxCachedLevel))
+			return
+		}
+		io.WriteString(w, `{"url":"https://cdn.test/a.m3u8"}`)
+	}))
+	s := &Service{L: l}
+	s.init()
+	ctx := context.Background()
+	for _, p := range []string{"/lite/big", "/lite/small"} {
+		if _, err := s.call(ctx, p, RefContext{}); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+	}
+	if _, ok := s.calls.get(ctx, "/lite/big"); ok {
+		t.Fatal("an answer over the limit was kept")
+	}
+	if _, ok := s.calls.get(ctx, "/lite/small"); !ok {
+		t.Fatal("a small answer was not kept")
 	}
 }
 

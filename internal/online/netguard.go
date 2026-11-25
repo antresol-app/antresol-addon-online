@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/antresol-app/antresol/addonkit"
 )
 
 // The upstream guard: stream URLs come from sources and their playlists,
@@ -39,7 +41,7 @@ type guardConfig struct {
 }
 
 // newUpstreamClient is the client of every stream, playlist, subtitle and
-// probe fetch. Its dialer refuses blockedAddr addresses, except the
+// probe fetch. Its dialer refuses addonkit.BlockedAddr addresses, except the
 // Lampac address when the URL names Lampac's own host:port (resolved on
 // each dial); only http and https, at most 5 redirects (each re-checked);
 // response headers within 20 s, and a body read that stalls for 30 s ends
@@ -113,7 +115,7 @@ func (cfg guardConfig) dial(ctx context.Context, network, addr string) (net.Conn
 		}
 	}
 	ok := func(ap netip.AddrPort) bool {
-		return !blockedAddr(ap.Addr().String()) || lampac[ap] || (cfg.allow != nil && cfg.allow(ap))
+		return !addonkit.BlockedAddr(ap.Addr().String()) || lampac[ap] || (cfg.allow != nil && cfg.allow(ap))
 	}
 	ips, err := cfg.lookup(ctx, host)
 	if err != nil {

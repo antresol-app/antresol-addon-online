@@ -48,7 +48,7 @@ const (
 	// and maxTokenTotal those of all sessions; past them a playlist is
 	// rewritten with sealed blobs, as before tokens.
 	maxTokenBytes = 32 << 20
-	maxTokenTotal = 192 << 20
+	maxTokenTotal = 64 << 20
 	// tokenPrefix starts a token (never a base64url blob).
 	tokenPrefix = "~"
 	// rewritesAtOnce bounds the playlist rewrites of the whole server.

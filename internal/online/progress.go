@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -124,6 +125,40 @@ type ProgressStore struct {
 	// seeding); a uid it does not list is skipped.
 	Users UserLister
 	Now   func() time.Time
+
+	once sync.Once
+	// eps: the library episodes a profile sees of a series, kept for
+	// episodesTTL (a save every 10 s must not list them again each time);
+	// mirrored: the position of an entry's last mirror, for mirrorEvery.
+	eps      *ttlCache[epsKey, map[[2]int]int64]
+	mirrored *ttlCache[mirrorKey, int64]
+}
+
+type epsKey struct {
+	user int64
+	tmdb int
+}
+
+type mirrorKey struct {
+	uid                   string
+	kind                  string
+	tmdb, season, episode int
+}
+
+const (
+	episodesTTL = 5 * time.Minute
+	// mirrorEvery: a save within this many ms of the last mirrored
+	// position of the entry is not mirrored again (a finish always is);
+	// the online position is stored anyway, and a library scan seeds the
+	// rest (SeedLibrary).
+	mirrorEvery = 30_000
+)
+
+func (p *ProgressStore) caches() {
+	p.once.Do(func() {
+		p.eps = newTTLCache[epsKey, map[[2]int]int64](1000, episodesTTL)
+		p.mirrored = newTTLCache[mirrorKey, int64](5000, episodesTTL)
+	})
 }
 
 // Fixed-width so lexicographic order equals chronological order.
@@ -231,12 +266,25 @@ func (p *ProgressStore) Save(ctx context.Context, u User, e Entry) error {
 	if p.Lib == nil || p.Progress == nil {
 		return nil
 	}
-	id, ok, err := p.libraryItem(ctx, u.ID, e)
+	p.caches()
+	mk := mirrorKey{u.UID, e.Kind, e.TMDBID, e.Season, e.Episode}
+	if last, ok := p.mirrored.get(ctx, mk); ok && !e.Finished && e.PositionMs-last < mirrorEvery && last-e.PositionMs < mirrorEvery {
+		// the library has the position of a few seconds ago: the row stays
+		// the library's (in_library), as SeedLibrary and hasLocal read it
+		if err := p.markInLibrary(ctx, u.UID, e, at); err != nil && ctx.Err() == nil {
+			log.Printf("online progress: mark %s %d: %v", e.Kind, e.TMDBID, err)
+		}
+		return nil
+	}
+	id, ok, err := p.mirrorItem(ctx, u.ID, e)
 	if err == nil && ok {
 		err = p.Progress.SaveProgress(ctx, addonkit.ProgressSave{UserID: u.ID, ItemID: id, PositionMs: e.PositionMs,
 			DurationMs: e.DurationMs, At: at, Played: true})
 		if err == nil {
 			err = p.markInLibrary(ctx, u.UID, e, at)
+		}
+		if err == nil {
+			p.mirrored.put(mk, e.PositionMs)
 		}
 	}
 	if refused(err) {
@@ -281,6 +329,26 @@ func (p *ProgressStore) libraryItem(ctx context.Context, userID int64, e Entry) 
 	eps, err := p.episodes(ctx, userID, e.TMDBID, e.Season)
 	if err != nil {
 		return 0, false, err
+	}
+	id, ok := eps[[2]int{e.Season, e.Episode}]
+	return id, ok, nil
+}
+
+// mirrorItem is libraryItem for a save: the library's episodes of a series
+// are kept for episodesTTL, the player saves every 10 s (a scan's new
+// episodes are seeded by SeedLibrary, which asks afresh).
+func (p *ProgressStore) mirrorItem(ctx context.Context, userID int64, e Entry) (int64, bool, error) {
+	if e.Kind == "movie" {
+		return p.libraryItem(ctx, userID, e)
+	}
+	k := epsKey{userID, e.TMDBID}
+	eps, ok := p.eps.get(ctx, k)
+	if !ok {
+		var err error
+		if eps, err = p.episodes(ctx, userID, e.TMDBID, -1); err != nil {
+			return 0, false, err
+		}
+		p.eps.put(k, eps)
 	}
 	id, ok := eps[[2]int{e.Season, e.Episode}]
 	return id, ok, nil

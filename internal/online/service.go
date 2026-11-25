@@ -37,8 +37,10 @@ const (
 	defaultLevelBudget   = 20 * time.Second
 	// probeTMDB is the title the admin status lists the sources of.
 	probeTMDB = 438631
-	// maxCachedLevel: bigger level answers are not kept.
+	// maxCachedLevel: bigger level and call answers are not kept;
+	// maxCacheBytes bounds what each of the two caches holds together.
 	maxCachedLevel = 512 << 10
+	maxCacheBytes  = 32 << 20
 )
 
 // TitleCtx is what the adapter needs to know of a TMDB title: the card
@@ -163,7 +165,9 @@ func (s *Service) init() {
 		// refs stay valid (a gone source fails its browse, which says so)
 		s.events = newTTLCache[titleKey, []Source](500, eventsTTL)
 		s.levels = newTTLCache[string, []byte](2000, 5*time.Minute)
+		s.levels.limitBytes(maxCacheBytes, func(b []byte) int { return len(b) })
 		s.calls = newTTLCache[string, []byte](500, 2*time.Minute)
+		s.calls.limitBytes(maxCacheBytes, func(b []byte) int { return len(b) })
 		s.offerMiss = newTTLCache[offerKey, struct{}](2000, offerMissTTL)
 		c := s.Upstream
 		if c == nil {
@@ -1180,7 +1184,7 @@ func (s *Service) call(ctx context.Context, raw string, rc RefContext) (PlayItem
 		var err error
 		b, err = s.shared(ctx, "call "+raw, func(ctx context.Context) ([]byte, error) {
 			b, err := s.L.Get(ctx, raw)
-			if err == nil {
+			if err == nil && len(b) <= maxCachedLevel {
 				s.calls.put(raw, b) // in the flight: kept when every caller left
 			}
 			return b, err
@@ -1217,7 +1221,7 @@ func (s *Service) subtitlesCall(ctx context.Context, raw string, rc RefContext) 
 		var err error
 		b, err = s.shared(ctx, key, func(ctx context.Context) ([]byte, error) {
 			b, err := s.L.Get(ctx, raw)
-			if err == nil {
+			if err == nil && len(b) <= maxCachedLevel {
 				s.calls.put(key, b)
 			}
 			return b, err

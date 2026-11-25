@@ -21,7 +21,7 @@ import { setTitle as setWindowTitle } from './title'
 import type { OnlineSource } from './types'
 import { WATCH_WAY } from './ways'
 
-const { Button, Player } = ui
+const { Button, Player, Spinner } = ui
 
 type Kind = 'movie' | 'series'
 
@@ -135,7 +135,7 @@ export function OnlinePlayer() {
     return (
       <div className={`${styles.playerFallback} ${sheet.fallback}`}>
         <div className={sheet.searching} role="status">
-          <span className={sheet.spinner} aria-hidden />
+          <Spinner track className={sheet.spinner} />
           <span>{t('online.searching')}</span>
         </div>
       </div>
@@ -273,7 +273,7 @@ function OnlineSession({ kind, tmdbId, state }: { kind: Kind; tmdbId: number; st
   if (startSec === null) {
     return (
       <div className={`${styles.playerFallback} ${sheet.fallback}`} role="status">
-        <span className={sheet.spinner} aria-hidden />
+        <Spinner track className={sheet.spinner} />
         <span className="visually-hidden">{t('common.loading')}</span>
       </div>
     )

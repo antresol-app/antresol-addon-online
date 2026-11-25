@@ -101,7 +101,7 @@ added to it too.
 | `tools/fenced.txt` | the files fenced with `//go:build ignore` until they are wired; `TestFence` keeps the list exact |
 | `sql_guard_test.go` | `TestNoCoreTableSQL`: the addon reaches the core through `addonkit` only and queries its own database |
 | `web/` | the web part on the SDK |
-| `tools/manifest` | writes the release's `antresol-addon.json` and checks the archives |
+| `Makefile` | the release; its manifest step is addonkit's `cmd/manifest` (writes the release's `antresol-addon.json`, checks the archives) |
 
 ## Hooks
 
